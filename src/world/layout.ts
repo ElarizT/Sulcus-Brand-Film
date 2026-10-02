@@ -9,7 +9,8 @@ export const ARC_R = 2000;
 export const ARC_STEP = rad(20);
 export const treeAngle = (i: number) => (i - 3) * ARC_STEP;
 
-export const CORE_R = 260;
+// The core is the Sulcus window lying at the centre (960 × 540 world units).
+export const CORE_R = 640;
 
 // A tree's local frame: `t` runs along the ring (screen-right seen from the
 // core), `n` points at the core.

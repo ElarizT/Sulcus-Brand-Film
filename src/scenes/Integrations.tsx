@@ -1,3 +1,3 @@
-import { AbsoluteFill } from "remotion";
+import { sceneOf } from "./sceneOf";
 
-export const Integrations: React.FC = () => <AbsoluteFill style={{ background: "#050506" }} />;
+export const Integrations = sceneOf("Integrations");

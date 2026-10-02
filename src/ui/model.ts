@@ -116,6 +116,8 @@ export type ApprovalRecord = {
   created_at: string;
 };
 
+export const APPROVAL_FETCH = 0.15;
+
 export const statusAt = (script: RunScript, t: number) => {
   let s: [number, string, string?] = script.statuses[0];
   for (const entry of script.statuses) if (entry[0] <= t) s = entry;
@@ -143,8 +145,10 @@ export const runAt = (script: RunScript, t: number) => {
     started_at: iso(script.start),
     finished_at: terminal ? iso(since) : null,
   };
+  // The app learns of an approval from the approvals API, which it refreshes
+  // 150 ms after an approval event (app.js scheduleApprovalRefresh).
   const approvals: ApprovalRecord[] = script.approvals
-    .filter((a) => a.at <= t)
+    .filter((a) => a.at + APPROVAL_FETCH <= t)
     .map((a) => {
       const decided = a.decidedAt != null && a.decidedAt <= t;
       return {
@@ -158,6 +162,10 @@ export const runAt = (script: RunScript, t: number) => {
     });
   return { run, events: events.map(({ t: _t, ...e }) => e), approvals };
 };
+
+// The sequence number an event will have in the run's stream.
+export const sequenceOf = (script: RunScript, pred: (e: Envelope) => boolean) =>
+  compile(script).envelopes.find(pred)?.sequence ?? -1;
 
 // The key app.js gives an agent's row (agentNodes(): scope:kind:identity).
 export const rowKey = (executionId: string, agentId: string) =>
@@ -254,7 +262,7 @@ export const openAiAgents = (base: Meta) => {
         t,
         type: "cloud.run.status_changed",
         source: "CloudControlPlane",
-        message: `Run ${status.replaceAll("_", " ")}`,
+        message: `Run ${status.replace(/_/g, " ")}`,
         meta: { status, ...(error ? { error } : {}) },
       });
     },

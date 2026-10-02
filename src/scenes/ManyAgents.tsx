@@ -1,3 +1,3 @@
-import { AbsoluteFill } from "remotion";
+import { sceneOf } from "./sceneOf";
 
-export const ManyAgents: React.FC = () => <AbsoluteFill style={{ background: "#050506" }} />;
+export const ManyAgents = sceneOf("ManyAgents");

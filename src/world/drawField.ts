@@ -1,6 +1,6 @@
 import { clamp01, fract, hash, lerp, ramp, smooth } from "../engine/math";
 import type { Renderer } from "../engine/renderer";
-import { COMMANDED, T } from "../film/timeline";
+import { T } from "../film/timeline";
 import {
   drawPermission,
   drawRetry,
@@ -8,17 +8,9 @@ import {
   drawWarning,
 } from "../primitives/events";
 import { coreRadius, drawNode, nodeScale } from "../primitives/node";
-import { along, drawPath, drawPulse } from "../primitives/path";
+import { drawPath, drawPulse } from "../primitives/path";
 import type { LightName } from "../theme/colors";
-import {
-  activity,
-  beatsSinceOnline,
-  commandedPause,
-  FEATURE,
-  FIELD,
-  fieldState,
-  route,
-} from "./field";
+import { activity, beatsSince, connectTime, FIELD, fieldState, route } from "./field";
 
 // Draws the seven agent systems at time t, in whatever state they are in:
 // waking one by one, tangled and accelerating, frozen, or standing in trees.
@@ -28,16 +20,22 @@ const labelPx = (sz: number) => Math.min(20, Math.max(6.5, 10.5 * sz));
 export type FieldOptions = {
   // 0..1: how much of the governed trees' fine labelling to show.
   detail?: number;
-  // Extra brightness on a system as the visibility scan crosses it.
+  // Extra brightness on a system.
   scan?: (sys: number) => number;
+  // Systems not to draw (the followed one once it has become the UI).
+  skip?: (sys: number) => boolean;
+  // Brightness multiplier per system (everything but the followed system
+  // steps back while it is picked out).
+  gain?: (sys: number) => number;
 };
 
 export const drawField = (r: Renderer, t: number, o: FieldOptions = {}) => {
   const { nodes, edges } = FIELD;
   const st = fieldState(t);
   const act = activity(t);
-  const beats = beatsSinceOnline(t);
   const detail = o.detail ?? 1;
+  const skip = o.skip ?? (() => false);
+  const gain = o.gain ?? (() => 1);
   // Pulses thicken as the network accelerates.
   const busy = ramp(t, T.complexity, T.freeze);
 
@@ -49,8 +47,9 @@ export const drawField = (r: Renderer, t: number, o: FieldOptions = {}) => {
     const B = st[e.b];
     const na = nodes[e.a];
     const nb = nodes[e.b];
+    if (skip(na.sys) || skip(nb.sys)) continue;
     const grow = ramp(t, e.birth, e.birth + e.grow);
-    const energy = Math.min(A.energy, B.energy);
+    const energy = Math.min(A.energy, B.energy) * Math.min(gain(na.sys), gain(nb.sys));
     const boost = 1 + (o.scan ? o.scan(nb.sys) : 0);
 
     if (e.cross) {
@@ -79,10 +78,7 @@ export const drawField = (r: Renderer, t: number, o: FieldOptions = {}) => {
 
     // Governed traffic: one wave up each tree every two beats.
     if (m > 0) {
-      if (nb.id === FEATURE.approval) continue; // drawn by the approval gate
-      if (t >= T.limitHit && FEATURE.limitTree.has(nb.id)) continue;
-      if (nb.sys === COMMANDED && commandedPause(t) > 0.5) continue;
-      const phase = beats / 2 - na.depth * 0.25 - (na.sys % 2) * 0.5;
+      const phase = beatsSince(t, connectTime(na.sys)) / 2 - na.depth * 0.25 - (na.sys % 2) * 0.5;
       const q = fract(phase) * 2;
       if (q < 1) drawPulse(r, pts, q, "ink", 0.95 * m * energy, 0.22);
     }
@@ -90,7 +86,7 @@ export const drawField = (r: Renderer, t: number, o: FieldOptions = {}) => {
 
   // ── nodes ───────────────────────────────────────────────────────────
   for (const n of nodes) {
-    if (t < n.birth) continue;
+    if (t < n.birth || skip(n.sys)) continue;
     const S = st[n.id];
     const pr = r.project(S.p);
     if (!pr || !r.onScreen(pr, 160)) continue;
@@ -100,11 +96,8 @@ export const drawField = (r: Renderer, t: number, o: FieldOptions = {}) => {
     const warned = t >= n.warnAt && S.m < 0.5;
     const boost = 1 + (o.scan ? o.scan(n.sys) : 0);
 
-    let color: LightName = warned ? "error" : "ink";
-    let energy = S.energy * boost;
-    if (n.id === FEATURE.inspected && t >= T.retryFail && t < T.retryOk) color = "error";
-    if (n.id === FEATURE.approval && S.m > 0.5 && t < T.approvalGrant + 0.35)
-      energy *= 0.3;
+    const color: LightName = warned ? "error" : "ink";
+    const energy = S.energy * boost * gain(n.sys) * S.born;
 
     drawNode(r, pr, {
       kind: n.kind,
@@ -154,11 +147,7 @@ export const drawField = (r: Renderer, t: number, o: FieldOptions = {}) => {
     if (S.m > 0.6 && detail > 0 && vis > 0.03) {
       const leaf = n.children.length === 0;
       const a = S.m * S.m * vis * detail * (leaf ? 0.6 : 0.8);
-      // The approval call is named by its gate until it has gone through.
-      // Calls that are being annotated are named by their annotation.
-      const gated =
-        (n.id === FEATURE.approval && t < T.approvalGrant + 1.9) ||
-        (n.id === FEATURE.inspected && t > T.select - 0.3 && t < T.seeOut + 0.4);
+      const gated = false;
       // Agents on the leaf row have calls either side; only the first two
       // levels are named.
       if (!leaf && n.depth <= 1 && sz >= 0.55)
@@ -175,15 +164,4 @@ export const drawField = (r: Renderer, t: number, o: FieldOptions = {}) => {
         );
     }
   }
-};
-
-// The live position of a point partway along a tree edge, for overlays that
-// ride on it (the approval gate).
-export const edgePoint = (t: number, child: number, f: number) => {
-  const st = fieldState(t);
-  const n = FIELD.nodes[child];
-  const e = FIELD.edges.find((x) => x.b === child && !x.cross)!;
-  const m = Math.min(st[n.parent].m, st[child].m);
-  const pts = route(st[n.parent].p, st[child].p, e.order, m);
-  return { pts, p: along(pts, f) };
 };

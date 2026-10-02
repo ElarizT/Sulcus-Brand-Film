@@ -1,28 +1,17 @@
-import {
-  clamp01,
-  easeInOut,
-  hash,
-  ramp,
-  rng,
-  v3,
-  type Vec3,
-} from "../engine/math";
-import { BEAT, COMMANDED, ECOSYSTEMS, T } from "../film/timeline";
+import { clamp01, easeInOut, hash, ramp, rng, v3, type Vec3 } from "../engine/math";
+import { BEAT, CONNECT_ORDER, connectAt, ECOSYSTEMS, FOLLOWED, T } from "../film/timeline";
 import type { NodeKind } from "../primitives/node";
-import {
-  frameAt,
-  ARC_R,
-  LEAF_SPACING,
-  LEVEL_V,
-  place,
-  treeAngle,
-  type TreeFrame,
-} from "./layout";
+import { ARC_R, frameAt, LEAF_SPACING, LEVEL_V, place, treeAngle, type TreeFrame } from "./layout";
 
 // The field: seven agent systems, ~90 agents and tool calls, built once and
 // deterministically. Every node has two homes — where it sits in the
 // uncontrolled network, and its place in its system's tree — and the film is
 // largely the journey from one to the other.
+//
+// One system is followed into Sulcus: the first agent to wake (FOLLOWED) is
+// the research-agent run, whose Coordinator, Researcher and Verifier become
+// rows of the real Run Detail. The other six stay frozen in the dark until
+// they connect to Sulcus near the end, one per beat.
 
 export type FNode = {
   id: number;
@@ -46,7 +35,7 @@ export type FNode = {
   permAt: number;
   retry: boolean;
   meter: number;
-  // When the control plane reaches this node.
+  // When Sulcus takes hold of this node.
   acquire: number;
 };
 
@@ -90,6 +79,9 @@ const AGENTS = [
   "writer",
   "tester",
 ];
+// The research-agent run's own tools, as its events name them.
+const FOLLOWED_TOOLS = ["search_web", "read_file", "search_web", "write_file", "read_file", "execute_command"];
+const FOLLOWED_AGENTS = ["Researcher", "Verifier"];
 const WARNINGS = [
   "WARN 429 rate_limit",
   "WARN timeout 30s",
@@ -100,15 +92,19 @@ const WARNINGS = [
   "WARN no owner",
   "ERR exit 1",
 ];
-const ROOT_EVENT: Record<string, string> = {
-  agent: "agent.start",
-  proc: "$ exec  pid 4127",
-  browser: "browser.navigate",
-  cloud: "cloud.run  started",
-};
+// The first event each system emits as it wakes: what it is, without a logo.
+const ROOT_EVENT = [
+  "langgraph.node  supervisor", // LangGraph
+  "claude  › Edit src/app.ts", // Claude Code
+  "copilot.topic  triggered", // Copilot Studio
+  "agent.started  Coordinator", // OpenAI Agents SDK
+  "$ codex exec  pid 4127", // Codex
+  "crew.kickoff  support", // CrewAI
+  "adk.run_async  billing_agent", // Google ADK
+];
 
 // Where each system's first agent wakes, before there is any ground to
-// stand on. System 3 is the first agent of the film.
+// stand on. The followed system is the first agent of the film.
 const CHAOS_CENTERS: Vec3[] = [
   [-1900, 900, 2300],
   [-620, 380, 1500],
@@ -119,38 +115,42 @@ const CHAOS_CENTERS: Vec3[] = [
   [2000, 620, 1500],
 ];
 
-export const FRAMES: TreeFrame[] = ECOSYSTEMS.map((_, i) =>
-  frameAt(treeAngle(i), ARC_R),
-);
+export const FRAMES: TreeFrame[] = ECOSYSTEMS.map((_, i) => frameAt(treeAngle(i), ARC_R));
+
+// When each system connects to Sulcus (the integrations sequence).
+export const connectTime = (sys: number) => connectAt(CONNECT_ORDER.indexOf(sys as never));
 
 const build = () => {
   const nodes: FNode[] = [];
   const named: number[] = [];
-  const add = (
-    sys: number,
-    parent: number,
-    depth: number,
-    kind: NodeKind,
-    R: () => number,
-  ) => {
+  const add = (sys: number, parent: number, depth: number, kind: NodeKind, R: () => number) => {
     const id = nodes.length;
     // Agents take the next unused name in their system; tools may repeat.
     const pick = R();
     const isTool = kind === "tool" || kind === "file";
     if (!isTool) named[sys] = (named[sys] ?? sys * 3) + 1;
+    const followed = sys === FOLLOWED;
     const name = isTool
-      ? TOOLS[Math.floor(pick * TOOLS.length)]
-      : AGENTS[named[sys] % AGENTS.length];
+      ? followed
+        ? FOLLOWED_TOOLS[nodes.filter((n) => n.sys === sys && (n.kind === "tool" || n.kind === "file")).length % FOLLOWED_TOOLS.length]
+        : TOOLS[Math.floor(pick * TOOLS.length)]
+      : followed
+        ? FOLLOWED_AGENTS[(named[sys] - sys * 3 - 2) % 2]
+        : AGENTS[named[sys] % AGENTS.length];
     const label =
-      depth === 0 ? "orchestrator" : kind === "file" ? "fs.write" : name;
+      depth === 0 ? (followed ? "Coordinator" : "orchestrator") : kind === "file" && !followed ? "fs.write" : name;
     const event =
       depth === 0
-        ? ROOT_EVENT[kind]
+        ? ROOT_EVENT[sys]
         : kind === "file"
-          ? "write  src/index.ts  +42 −7"
+          ? followed
+            ? "write_file  plan.md"
+            : "write  src/index.ts  +42 −7"
           : kind === "tool"
             ? `tool.call  ${name}`
-            : `spawn  ${name}`;
+            : followed
+              ? `handoff  → ${name}`
+              : `spawn  ${name}`;
     nodes.push({
       id,
       sys,
@@ -170,7 +170,7 @@ const build = () => {
       permAt: Infinity,
       retry: false,
       meter: 0,
-      acquire: 0,
+      acquire: Infinity,
     });
     if (parent >= 0) nodes[parent].children.push(id);
     return id;
@@ -179,27 +179,29 @@ const build = () => {
   const roots: number[] = [];
   for (let s = 0; s < ECOSYSTEMS.length; s++) {
     const R = rng(4100 + s * 97);
+    const followed = s === FOLLOWED;
     const root = add(s, -1, 0, ECOSYSTEMS[s].kind as NodeKind, R);
     roots.push(root);
     let leaves = 0;
-    const subs = s === 3 ? 2 : 3;
+    const subs = followed ? 2 : 3;
     for (let j = 0; j < subs; j++) {
       const sub = add(s, root, 1, "agent", R);
       const n = 2 + (R() < 0.5 ? 1 : 0);
       for (let k = 0; k < n; k++) {
-        if (R() < 0.3 && leaves < 7) {
+        // The followed run has three agents and no deeper ones.
+        if (!followed && R() < 0.3 && leaves < 7) {
           const a = add(s, sub, 2, "agent", R);
           const m = 1 + (R() < 0.6 ? 1 : 0);
           for (let q = 0; q < m; q++) add(s, a, 3, "tool", R);
           leaves += m;
         } else {
-          add(s, sub, 2, R() < 0.16 ? "file" : "tool", R);
+          add(s, sub, 2, R() < 0.16 && !followed ? "file" : "tool", R);
           leaves += 1;
         }
       }
     }
     // The first agent's opening moves are a tool call and a file write.
-    if (s === 3) {
+    if (followed) {
       add(s, root, 1, "tool", R);
       add(s, root, 1, "file", R);
     }
@@ -247,7 +249,7 @@ const build = () => {
     ];
   }
   // The first agent's opening moves are composed for the opening close-up.
-  const first = nodes[roots[3]];
+  const first = nodes[roots[FOLLOWED]];
   const firstTool = first.children.find((c) => nodes[c].kind === "tool")!;
   const firstFile = first.children.find((c) => nodes[c].kind === "file")!;
   nodes[firstTool].chaos = v3.add(first.chaos, [250, 120, 60]);
@@ -260,7 +262,7 @@ const build = () => {
     nodes[id].birth = t;
     born.add(id);
   };
-  setBirth(roots[3], T.agentStart);
+  setBirth(roots[FOLLOWED], T.agentStart);
   setBirth(firstTool, T.toolCall);
   setBirth(roots[1], T.procWake);
   setBirth(roots[5], T.browserWake);
@@ -285,8 +287,7 @@ const build = () => {
   }
   const t0 = 8.3;
   order.forEach((id, k) => {
-    const t =
-      t0 + (T.spawnEnd - t0) * Math.pow(k / (order.length - 1), 0.62);
+    const t = t0 + (T.spawnEnd - t0) * Math.pow(k / (order.length - 1), 0.62);
     setBirth(id, Math.max(t, nodes[nodes[id].parent].birth + 0.55));
   });
 
@@ -320,6 +321,7 @@ const build = () => {
   const linked = new Set<string>();
   const C = rng(2024);
   let guard = 0;
+  const lastCross = T.freeze - 0.5;
   while (edges.filter((e) => e.cross).length < 104 && guard++ < 6000) {
     const a = Math.floor(C() * nodes.length);
     const b = Math.floor(C() * nodes.length);
@@ -329,10 +331,7 @@ const build = () => {
     if (d > 1500 || d < 200) continue;
     linked.add(key);
     const after = Math.max(nodes[a].birth, nodes[b].birth);
-    const birth = Math.min(
-      22.0,
-      Math.max(10.4 + C() * 2, after + 0.3 + C() * 3.5),
-    );
+    const birth = Math.min(lastCross, Math.max(10.4 + C() * 2, after + 0.3 + C() * 3.5));
     edges.push({
       a,
       b,
@@ -346,18 +345,19 @@ const build = () => {
   }
 
   // Incidents in the uncontrolled network, denser toward the freeze.
+  const span = T.freeze - T.complexity;
   for (const n of nodes) {
     const h = (salt: number) => hash(n.id, salt);
     if (h(11) < 0.2) {
-      n.warnAt = Math.max(n.birth + 0.8, 22.3 - Math.pow(h(12), 1.8) * 8.5);
+      n.warnAt = Math.max(n.birth + 0.8, T.freeze - 0.2 - Math.pow(h(12), 1.8) * span * 0.68);
       n.warnText = WARNINGS[Math.floor(h(13) * WARNINGS.length)];
     }
     const isAgent = n.kind !== "tool" && n.kind !== "file";
-    if (isAgent && h(14) < 0.22)
-      n.permAt = Math.max(n.birth + 0.6, 12 + h(15) * 9.5);
+    if (isAgent && h(14) < 0.22) n.permAt = Math.max(n.birth + 0.6, T.complexity + 2 + h(15) * (span - 2.8));
     if (!isAgent && h(16) < 0.2) n.retry = true;
     if (isAgent && h(17) < 0.5) n.meter = 0.05 + h(18) * 0.11;
-    n.acquire = T.online + Math.hypot(n.chaos[0], n.chaos[2]) / T.waveSpeed;
+    // Sulcus takes hold of a system when it connects, root first.
+    if (n.sys !== FOLLOWED) n.acquire = connectTime(n.sys) + 0.15 + n.depth * 0.08;
   }
 
   return { nodes, edges, roots };
@@ -365,21 +365,7 @@ const build = () => {
 
 export const FIELD = build();
 
-const subtree = (id: number): number[] => [
-  id,
-  ...FIELD.nodes[id].children.flatMap(subtree),
-];
-const leafOf = (sys: number, sub: number) => {
-  const root = FIELD.nodes[FIELD.roots[sys]];
-  const agents = root.children.filter((c) => FIELD.nodes[c].kind === "agent");
-  const a = FIELD.nodes[agents[sub % agents.length]];
-  return a.children.find((c) => FIELD.nodes[c].children.length === 0) ?? a.id;
-};
-const subOf = (sys: number, sub: number) => {
-  const root = FIELD.nodes[FIELD.roots[sys]];
-  const agents = root.children.filter((c) => FIELD.nodes[c].kind === "agent");
-  return agents[sub % agents.length];
-};
+const subtree = (id: number): number[] => [id, ...FIELD.nodes[id].children.flatMap(subtree)];
 
 // Extents of each system's tree.
 export const SYSTEMS = FIELD.roots.map((root, i) => {
@@ -392,45 +378,9 @@ export const SYSTEMS = FIELD.roots.map((root, i) => {
     top: Math.max(...ns.map((n) => n.v)),
     agents: ns.length - leaves,
     calls: leaves,
+    nodes: ns.map((n) => n.id),
   };
 });
-
-// The moments of control, one tree each, in the order the camera reads them:
-// a branch that is inspected, a call that waits for approval, an agent that
-// reaches its budget, and a call that is stopped at its boundary.
-export const FEATURE = (() => {
-  const inspected = leafOf(1, 0);
-  const approval = leafOf(2, 1);
-  const limit = subOf(3, 0);
-  const blocker = subOf(4, 2);
-  FIELD.nodes[inspected].label = "http.get";
-  FIELD.nodes[inspected].kind = "tool";
-  FIELD.nodes[approval].label = "deploy --prod";
-  const branch = (leaf: number) => {
-    const ids: number[] = [];
-    for (let id = leaf; id >= 0; id = FIELD.nodes[id].parent) ids.unshift(id);
-    return ids;
-  };
-  return {
-    inspected,
-    inspectedBranch: branch(inspected),
-    approval,
-    approvalBranch: branch(approval),
-    limit,
-    limitTree: new Set(subtree(limit)),
-    blocker,
-  };
-})();
-
-// How strongly the picture is focused on one branch (0 = everything lit).
-export const focusSee = (t: number) =>
-  ramp(t, T.select, T.select + 0.5) * (1 - ramp(t, T.seeOut - 0.2, T.seeOut + 0.4));
-export const focusStep = (t: number) =>
-  ramp(t, T.approvalAsk - 0.3, T.approvalAsk + 0.2) *
-  (1 - ramp(t, T.approvalGrant + 0.5, T.approvalGrant + 1.1));
-// 1 while the commanded system is paused from the core.
-export const commandedPause = (t: number) =>
-  ramp(t, T.command + 0.5, T.command + 0.75) * (1 - ramp(t, T.resume + 0.5, T.resume + 0.8));
 
 // ── time ──────────────────────────────────────────────────────────────────
 
@@ -443,16 +393,18 @@ export const activity = (t: number) => {
   return c + (0.7 * d * d) / (T.freeze - T.complexity);
 };
 
+const REORG_DELAY = 0.2;
+const REORG = 1.6;
+
 // 0 → 1 as a node travels from the tangle to its place in the tree.
-export const tidy = (n: FNode, t: number) =>
-  easeInOut((t - n.acquire - T.reorgDelay) / T.reorgDuration);
+export const tidy = (n: FNode, t: number) => easeInOut((t - n.acquire - REORG_DELAY) / REORG);
 
 export type NodeState = {
   p: Vec3;
   // 0 → 1 over the node's first moments.
   born: number;
   m: number;
-  // Seconds since the control plane reached it; negative before.
+  // Seconds since Sulcus took hold of it; negative before.
   held: number;
   // Brightness: full while running, low while frozen and unowned.
   energy: number;
@@ -464,10 +416,14 @@ let cache: NodeState[] = [];
 export const fieldState = (t: number): NodeState[] => {
   if (t === cacheT) return cache;
   const frozen = ramp(t, T.freeze, T.freeze + 0.1);
-  const see = focusSee(t);
-  const step = focusStep(t);
-  const paused = commandedPause(t);
+  const followedAt = connectTime(FOLLOWED);
   cache = FIELD.nodes.map((n) => {
+    // The followed system left the tangle for the Run Detail; it is seen
+    // again only as its tree, when its stream connects.
+    if (n.sys === FOLLOWED && t > T.online + 3) {
+      const grow = clamp01((t - followedAt - n.depth * 0.08) / 0.5);
+      return { p: n.tree, born: grow, m: 1, held: t - followedAt, energy: grow };
+    }
     const m = tidy(n, t);
     const held = t - n.acquire;
     // Unanchored nodes hang and sway; owned ones stand still.
@@ -480,13 +436,7 @@ export const fieldState = (t: number): NodeState[] => {
     ];
     const p = v3.add(v3.lerp(n.chaos, n.tree, m), drift);
     const wake = clamp01(held / 0.5);
-    let energy = 1 - 0.86 * frozen * (1 - wake);
-    if (t >= T.limitHit && FEATURE.limitTree.has(n.id) && n.id !== FEATURE.limit)
-      energy *= 1 - 0.62 * ramp(t, T.limitHit, T.limitHit + 0.4);
-    // While one branch is being read, everything else steps back.
-    if (see > 0 && !FEATURE.inspectedBranch.includes(n.id)) energy *= 1 - 0.74 * see;
-    if (step > 0 && !FEATURE.approvalBranch.includes(n.id)) energy *= 1 - 0.74 * step;
-    if (paused > 0 && n.sys === COMMANDED) energy *= 1 - 0.62 * paused;
+    const energy = 1 - 0.86 * frozen * (1 - wake);
     return { p, born: clamp01((t - n.birth) / 0.35), m, held, energy };
   });
   cacheT = t;
@@ -516,5 +466,5 @@ export const route = (a: Vec3, b: Vec3, order: number, m: number): Vec3[] => {
   return [a, v3.lerp(c1, t1, m), v3.lerp(c2, t2, m), b];
 };
 
-// Beats since the control plane came online; governed motion runs on this.
-export const beatsSinceOnline = (t: number) => (t - T.online) / BEAT;
+// Beats since a system connected; governed motion runs on this.
+export const beatsSince = (t: number, at: number) => (t - at) / BEAT;

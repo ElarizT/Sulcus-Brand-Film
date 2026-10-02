@@ -41,8 +41,8 @@ export const SCENES: Record<SceneId, { from: number; to: number }> = {
   IntoSulcus: { from: 22.5, to: 30 }, // bars 10–12: one path becomes the Run Detail
   RunDetail: { from: 30, to: 52.5 }, // bars 13–21: see, inspect, approve, limit
   ManyAgents: { from: 52.5, to: 62.5 }, // bars 22–25: a run with many agents
-  Workspace: { from: 62.5, to: 65 }, // bar 26: projects
-  Integrations: { from: 65, to: 77.5 }, // bars 27–31: seven systems, one place
+  Workspace: { from: 62.5, to: 64.375 }, // bar 26: projects
+  Integrations: { from: 64.375, to: 77.5 }, // bars 26–31: seven systems, one place
   ScaleSequence: { from: 77.5, to: 87.5 }, // bars 32–35: everything, structured
   EndCard: { from: 87.5, to: 94 },
 };
@@ -102,22 +102,23 @@ export const T = {
   many: 55.0, // the second run fills the frame
   manyDone: 56.25, // one branch completes
   manyFail: 57.5, // one branch's tool call fails
-  manyApproval: 58.75, // one branch waits for approval
-  manyHide: 60.6, // the operator hides the panel; the run carries on
+  manyStart: 58.0, // a new agent joins the tree
+  manyApproval: 60.0, // a merge waits for approval; the run pauses
   manyOut: 62.5,
 
   // ── Workspace ─────────────────────────────────────────────────────────
   projects: 62.5,
 
   // ── Integrations ──────────────────────────────────────────────────────
-  integrate: 65.0, // seven systems connect, one per beat
-  flyThrough: 69.375, // their runs, one structure
-  onePlace: 72.5, // ONE PLACE TO CONTROL THEM.
-  onePlaceOut: 77.0,
+  integrate: 64.375, // the Runs page; the window is laid down at the core
+  land: 66.25, // it lands: the ground comes on from it
+  connectFirst: 66.875, // seven systems connect, one per beat
+  flyThrough: 71.25, // their runs, one structure
+  onePlace: 75.0, // ONE PLACE TO CONTROL THEM.
+  onePlaceOut: 79.0,
 
   // ── Scale ─────────────────────────────────────────────────────────────
-  scale: 77.5, // the camera leaves the interface
-  land: 79.375, // the interface lies down at the core of everything
+  scale: 77.5, // the camera leaves the ground
   climax: 82.5,
   collapse: 86.25,
   dark: 87.2,
@@ -149,4 +150,4 @@ export const FOLLOWED = 3;
 
 // The order the seven systems connect during the integrations sequence.
 export const CONNECT_ORDER = [1, 4, 2, 6, 0, 5, 3] as const;
-export const connectAt = (i: number) => T.integrate + i * BEAT;
+export const connectAt = (i: number) => T.connectFirst + i * BEAT;

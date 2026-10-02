@@ -1,3 +1,3 @@
-import { AbsoluteFill } from "remotion";
+import { sceneOf } from "./sceneOf";
 
-export const IntoSulcus: React.FC = () => <AbsoluteFill style={{ background: "#050506" }} />;
+export const IntoSulcus = sceneOf("IntoSulcus");

@@ -7,7 +7,8 @@ import "./film.css";
 // (app.js applyGeometry, placeApprovalPanel), this does the same after layout.
 
 export type UIRect = { x: number; y: number; w: number; h: number };
-export type Measured = Record<string, UIRect>;
+export type Measured = { rects: Record<string, UIRect>; all: Record<string, UIRect[]> };
+export const emptyMeasured = (): Measured => ({ rects: {}, all: {} });
 
 const ease = (k: number) => 1 - Math.pow(1 - Math.min(1, Math.max(0, k)), 3);
 
@@ -50,7 +51,7 @@ const local = (el: HTMLElement, root: HTMLElement): UIRect => {
   while (n && n !== root) {
     x += n.offsetLeft;
     y += n.offsetTop;
-    let p = n.parentElement;
+    let p: HTMLElement | null = n.parentElement;
     const off = n.offsetParent as HTMLElement | null;
     // Subtract the scroll of every container between here and the next
     // offset parent.
@@ -75,6 +76,8 @@ export type AfterLayout = {
   listTo?: { sequence: number; offset: number };
   // Elements to measure, by name → CSS selector.
   measure?: Record<string, string>;
+  // Every element matching, by name → CSS selector.
+  measureAll?: Record<string, string>;
 };
 
 type Props = {
@@ -119,11 +122,13 @@ export const SulcusUI: React.FC<Props> = ({ html, width, height, vars = {}, afte
     }
 
     if (sink) {
-      const out: Measured = {};
+      const out = emptyMeasured();
       for (const [name, selector] of Object.entries(after?.measure ?? {})) {
         const el = root.querySelector<HTMLElement>(selector);
-        if (el) out[name] = local(el, root);
+        if (el) out.rects[name] = local(el, root);
       }
+      for (const [name, selector] of Object.entries(after?.measureAll ?? {}))
+        out.all[name] = [...root.querySelectorAll<HTMLElement>(selector)].map((el) => local(el, root));
       sink.current = out;
     }
   });

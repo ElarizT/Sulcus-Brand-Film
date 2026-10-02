@@ -1,14 +1,16 @@
-import { rad, ramp, v3, type Vec3 } from "../engine/math";
+import { ramp, v3, type Vec3 } from "../engine/math";
+import { onPlane, planeNormal, type Plane } from "../engine/project";
 import type { Camera } from "../engine/renderer";
-import { FEATURE, FIELD } from "../world/field";
-import { ARC_R, frameAt } from "../world/layout";
+import { w1, w2 } from "./planes";
 import { T } from "./timeline";
 
 // One camera for the whole film. The picture is a single continuous move
 // through one world: it starts on a single agent, backs away as the network
-// outgrows the frame, drops in to read the governed trees one at a time, then
-// rises until the whole system is in view. Scene boundaries are cuts in the
-// edit, not in the camera.
+// outgrows the frame, finds that first agent again in the frozen tangle and
+// follows its execution path until it is the Sulcus Run Detail, travels
+// through the real interface like a film camera rather than a pointer, then
+// rises off the ground until the whole system is in view. Scene boundaries
+// are cuts in the edit, not in the camera.
 
 type Key = {
   t: number;
@@ -18,30 +20,35 @@ type Key = {
   // How the camera passes through this key. By default it carries the
   // average speed of the keys either side. "next" / "prev" take the speed of
   // the adjoining segment instead: the start and end of a slow hold, so the
-  // hold is one steady push and not a wobble.
-  via?: "next" | "prev";
+  // hold is one steady push and not a wobble. "stop" arrives at rest.
+  via?: "next" | "prev" | "stop";
 };
 
-// A position inside the arc, looking squarely at the tree at `deg`, shifted
-// `aside` along the ring so the tree can sit off-centre in frame.
-const atTree = (
-  deg: number,
-  dist: number,
-  eyeH: number,
-  lookH: number,
-  aside = 0,
-) => {
-  const f = frameAt(rad(deg), ARC_R);
-  const at = v3.add(f.base, v3.scale(f.t, aside));
-  return {
-    eye: v3.add(v3.add(at, v3.scale(f.n, dist)), [0, eyeH, 0]),
-    target: v3.add(at, [0, lookH, 0]),
-  };
+const FOCAL = 1100;
+
+// Rodrigues rotation of v about unit axis k.
+const rotate = (v: Vec3, k: Vec3, deg: number): Vec3 => {
+  const a = (deg * Math.PI) / 180;
+  const c = Math.cos(a);
+  const s = Math.sin(a);
+  return v3.add(v3.add(v3.scale(v, c), v3.scale(v3.cross(k, v), s)), v3.scale(k, v3.dot(k, v) * (1 - c)));
 };
 
-// The approval beat is framed on its gate, with room to the right for the
-// request.
-const GATE_ASIDE = FIELD.nodes[FEATURE.approval].u + 215;
+// A framing on a Sulcus window: look at UI point (x, y) so that one UI pixel
+// is `zoom` screen pixels, from straight in front of the window, swung `yaw`
+// degrees round it and raised `pitch` degrees above it.
+const ui = (pl: Plane, x: number, y: number, zoom: number, yaw = 0, pitch = 0, focal = FOCAL) => {
+  const target = onPlane(pl, x, y);
+  let dir = planeNormal(pl);
+  dir = rotate(dir, [0, 1, 0], yaw);
+  const side = v3.norm(v3.cross(dir, [0, 1, 0]));
+  dir = rotate(dir, side, pitch);
+  const d = (focal * v3.len(pl.ax)) / zoom;
+  return { eye: v3.add(target, v3.scale(dir, d)), target, focal };
+};
+
+const W1 = w1(30);
+const W2 = w2(58);
 
 const KEYS: Key[] = [
   // The Agents: close on the first agent, drifting back.
@@ -50,49 +57,65 @@ const KEYS: Key[] = [
   { t: 7, eye: [-70, 640, -400], target: [-10, 600, 1250], focal: 1190 },
   { t: 10, eye: [-240, 700, -950], target: [40, 600, 1500], focal: 1150 },
   // Complexity: the pull-back keeps going; the network outgrows the frame.
-  { t: 16, eye: [-420, 860, -1150], target: [60, 680, 1750], focal: 1080 },
-  { t: 22.5, eye: [-640, 980, -1380], target: [80, 680, 1900], focal: 980 },
-  // Frozen. The camera keeps drifting through a world that has stopped.
-  { t: 27.5, eye: [-600, 990, -1380], target: [40, 250, 1300], focal: 1000 },
-  // The control plane takes the field; push in as it reorganises.
-  { t: 30.2, eye: [-560, 860, -1000], target: [-220, 420, 1500], focal: 1080 },
-  // Three holds, each a slow push, with a glide along the arc between them.
-  // See: one tree, with room on its left for the inspector.
-  { t: 32.3, ...atTree(-40, 1430, 440, 378, -378), focal: 1150, via: "next" },
-  { t: 36.2, ...atTree(-40, 1340, 440, 378, -378), focal: 1150, via: "prev" },
-  // Step in: the next tree, on its approval gate.
-  { t: 37.4, ...atTree(-20, 1450, 450, 400, GATE_ASIDE), focal: 1150, via: "next" },
-  { t: 41.2, ...atTree(-20, 1330, 450, 400, GATE_ASIDE), focal: 1150, via: "prev" },
-  // Boundaries: back a little, two trees in shot.
-  { t: 42.4, ...atTree(10, 1760, 470, 390), focal: 1100, via: "next" },
-  { t: 46.0, ...atTree(10, 1670, 470, 390), focal: 1100, via: "prev" },
-  // One place: back behind the core, all seven systems in frame.
-  { t: 47.8, eye: [0, 1090, -1580], target: [0, 195, 1040], focal: 1050, via: "next" },
-  { t: 52.5, eye: [280, 1260, -1850], target: [0, 190, 1000], focal: 1050 },
-  { t: 57.5, eye: [560, 1500, -2300], target: [0, 150, 900], focal: 1040 },
+  { t: 15.2, eye: [-420, 860, -1150], target: [60, 680, 1750], focal: 1080 },
+  { t: T.freeze, eye: [-640, 980, -1380], target: [80, 680, 1900], focal: 980 },
+  // Frozen. The camera drifts through a world that has stopped, and turns to
+  // find the first agent again.
+  { t: T.pulse1, eye: [-560, 900, -1250], target: [30, 560, 1000], focal: 1000 },
+  // Following its execution path in, until it is square on.
+  { t: T.online, eye: [-170, 660, -330], target: [150, 490, 900], focal: 1080 },
+  { t: T.uiFull, ...ui(W1, 860, 320, 1.45) },
+  // The whole app: this is a real product.
+  { t: T.see, ...ui(W1, 960, 560, 0.84), via: "stop" },
+  // SEE WHAT YOUR AGENTS ARE DOING.
+  { t: 32.4, ...ui(W1, 1010, 330, 1.22, 4) },
+  { t: 33.4, ...ui(W1, 900, 300, 1.7, 6) },
+  { t: 34.9, ...ui(W1, 1150, 290, 1.9, 4) },
+  // One call, close; then down to its event.
+  { t: 35.7, ...ui(W1, 1273, 282, 3.0, 2) },
+  { t: 36.8, ...ui(W1, 830, 600, 1.55, -3), via: "next" },
+  { t: 39.2, ...ui(W1, 850, 610, 1.68, -5), via: "prev" },
+  // STEP IN WHEN IT MATTERS.
+  { t: 40.3, ...ui(W1, 1050, 470, 1.25, 4) },
+  { t: 41.6, ...ui(W1, 1080, 530, 1.5, 8, 2), via: "next" },
+  { t: 43.4, ...ui(W1, 1390, 590, 2.05, 9, 3), via: "prev" },
+  { t: 44.8, ...ui(W1, 1150, 560, 1.0, 3) },
+  // SET THE BOUNDARIES.
+  { t: 46.8, ...ui(W1, 1180, 420, 1.12, -6) },
+  { t: 49.2, ...ui(W1, 1300, 240, 1.85, -6), via: "next" },
+  { t: 50.4, ...ui(W1, 1060, 290, 1.32, -2) },
+  { t: 52.3, ...ui(W1, 1050, 300, 1.25, 0), via: "prev" },
+  // Back: one run is stopped, another comes forward.
+  { t: 53.7, ...ui(W1, 1180, 520, 0.56, 6) },
+  { t: T.many, ...ui(W2, 1000, 400, 1.08) },
+  { t: 57.0, ...ui(W2, 900, 380, 1.35, 5) },
+  { t: 59.3, ...ui(W2, 1080, 400, 1.32, -4) },
+  { t: 61.4, ...ui(W2, 1200, 520, 1.45, -6) },
+  // The workspace.
+  { t: 63.4, ...ui(W2, 960, 560, 0.88) },
+  // The window is laid down at the core; the ground comes on from it.
+  { t: T.land, eye: [0, 760, -860], target: [0, 40, 260], focal: 980 },
+  { t: 68.4, eye: [-60, 560, -560], target: [0, 60, 500], focal: 1000 },
+  { t: 70.6, eye: [60, 520, -470], target: [0, 90, 560], focal: 1000 },
+  // Four runs from four frameworks: one Run Detail.
+  { t: 71.9, eye: [-1350, 330, 40], target: [-1350, 300, 760], focal: 1050 },
+  { t: 72.9, eye: [-450, 330, 40], target: [-450, 300, 760], focal: 1050 },
+  { t: 73.9, eye: [450, 330, 40], target: [450, 300, 760], focal: 1050 },
+  { t: 74.9, eye: [1350, 330, 40], target: [1350, 300, 760], focal: 1050 },
+  // ONE PLACE TO CONTROL THEM.
+  { t: 75.9, eye: [380, 1250, -1750], target: [0, 170, 850], focal: 1040 },
+  { t: T.scale, eye: [560, 1500, -2300], target: [0, 150, 900], focal: 1040 },
   // Scale: up and away.
-  { t: 60, eye: [1050, 2700, -4300], target: [0, 0, 600], focal: 1000 },
-  { t: 63, eye: [1650, 4300, -7000], target: [0, 0, 300], focal: 980 },
-  { t: 66.25, eye: [2100, 5600, -9200], target: [0, 0, 0], focal: 960 },
-  { t: 68, eye: [2200, 5900, -9700], target: [0, 0, 0], focal: 960 },
+  { t: 80, eye: [1050, 2700, -4300], target: [0, 0, 600], focal: 1000 },
+  { t: 83, eye: [1650, 4300, -7000], target: [0, 0, 300], focal: 980 },
+  { t: T.collapse, eye: [2100, 5600, -9200], target: [0, 0, 0], focal: 960 },
+  { t: 88, eye: [2200, 5900, -9700], target: [0, 0, 0], focal: 960 },
 ];
 
-const hermite = (
-  p0: number,
-  p1: number,
-  m0: number,
-  m1: number,
-  dt: number,
-  s: number,
-) => {
+const hermite = (p0: number, p1: number, m0: number, m1: number, dt: number, s: number) => {
   const s2 = s * s;
   const s3 = s2 * s;
-  return (
-    (2 * s3 - 3 * s2 + 1) * p0 +
-    (s3 - 2 * s2 + s) * dt * m0 +
-    (-2 * s3 + 3 * s2) * p1 +
-    (s3 - s2) * dt * m1
-  );
+  return (2 * s3 - 3 * s2 + 1) * p0 + (s3 - 2 * s2 + s) * dt * m0 + (-2 * s3 + 3 * s2) * p1 + (s3 - s2) * dt * m1;
 };
 
 // Catmull–Rom through the keys, with tangents taken over real time so the
@@ -104,11 +127,7 @@ const spline = (get: (k: Key) => number, i: number, s: number) => {
   const k3 = KEYS[Math.min(KEYS.length - 1, i + 2)];
   const slope = (a: Key, b: Key) => (get(b) - get(a)) / (b.t - a.t || 1);
   const through = (k: Key, before: Key, after: Key) =>
-    k.via === "next"
-      ? slope(k, after)
-      : k.via === "prev"
-        ? slope(before, k)
-        : slope(before, after);
+    k.via === "stop" ? 0 : k.via === "next" ? slope(k, after) : k.via === "prev" ? slope(before, k) : slope(before, after);
   const m1 = through(k1, k0, k2);
   const m2 = through(k2, k1, k3);
   return hermite(get(k1), get(k2), m1, m2, k2.t - k1.t, s);
@@ -134,7 +153,7 @@ export const cameraAt = (t: number): Camera => {
 // Handheld tremor, in logical px: none while the system is calm, growing as
 // the network runs away, and gone the instant it freezes.
 export const shakeAt = (t: number) => {
-  const amp = t < T.freeze ? 3.4 * Math.pow(ramp(t, 13, T.freeze), 2) : 0;
+  const amp = t < T.freeze ? 3.4 * Math.pow(ramp(t, 12, T.freeze), 2) : 0;
   return {
     x: amp * (0.6 * Math.sin(t * 31.4) + 0.4 * Math.sin(t * 66.5 + 1.3)),
     y: amp * (0.6 * Math.sin(t * 25.7 + 0.7) + 0.4 * Math.sin(t * 74.6 + 2.1)),

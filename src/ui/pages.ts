@@ -32,7 +32,8 @@ export type RunView = {
   deciding?: string | null;
   approveHover?: boolean;
   enter?: Record<string, number | undefined>;
-  focus?: number; // 0..1 of the approval focus (the product's .25 s ease)
+  // The approval focus is still easing out after the panel has gone.
+  focusOut?: number;
   toast?: string;
 };
 
@@ -51,7 +52,7 @@ const stateFor = (v: RunView): AppState => {
     tab: v.tab ?? "activity",
     filter: v.filter ?? "All",
     expanded: new Set(v.expanded ?? []),
-    fx: { favicon: favicon(), approveHover: v.approveHover, enter: v.enter },
+    fx: { favicon: favicon(), approveHover: v.approveHover, enter: v.enter, focusOut: v.focusOut },
   };
 };
 
@@ -99,10 +100,12 @@ export type Project = {
 
 const baseState = (t: number): AppState => ({ now: wall(t), fx: { favicon: favicon() } });
 
-export const runsPage = (t: number, runs: ListRun[], hover?: string) => {
+// `fresh`: rows that have just arrived, with their entrance progress 0 → 1.
+export const runsPage = (t: number, runs: ListRun[], fresh: Record<string, number> = {}) => {
   const state = { ...baseState(t), runs, projects: [{}] };
   let html = app.runsPage(state);
-  if (hover) html = html.replace(`<tr data-run-id="${hover}"`, `<tr class="film-hover" data-run-id="${hover}"`);
+  for (const [id, k] of Object.entries(fresh))
+    if (k < 1) html = html.replace(`<tr data-run-id="${id}"`, `<tr style="opacity:${k.toFixed(3)}" data-run-id="${id}"`);
   return app.shell(state, "runs", ["Sulcus", "Runs"], [{ label: "New run", className: "button-primary" }], html, ACCOUNT);
 };
 
