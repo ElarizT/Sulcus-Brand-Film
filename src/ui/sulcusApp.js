@@ -18,8 +18,6 @@
 //     machine it runs on.
 // Event handling, network and auth code is not included.
 
-/* eslint-disable */
-
 const TERMINAL = new Set(["completed", "failed", "stopped"]);
 const FILTERS = ["All", "Agents", "LLM", "Tools", "Policies", "Errors", "System"];
 

@@ -57,6 +57,10 @@ export const FilmFrame: React.FC<{ t: number }> = ({ t }) => {
   const sinks = useRef({ w1: emptyMeasured(), w2: emptyMeasured() });
   const w1Sink = useRef<Measured>(emptyMeasured());
   const w2Sink = useRef<Measured>(emptyMeasured());
+  // Measurements belong to this frame only: a window that is not on screen
+  // now must not lend the light layer positions from another frame.
+  w1Sink.current = emptyMeasured();
+  w2Sink.current = emptyMeasured();
 
   const windows = windowsAt(t, cam, project);
   const covered = windows.some(

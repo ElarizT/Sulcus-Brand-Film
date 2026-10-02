@@ -66,7 +66,7 @@ export const UIPlane: React.FC<Props> = ({
     h: h * D,
   };
   const p = place(dense, project);
-  const shown = p.visible && opacity > 0.002 && (!reveal || reveal.r > 0);
+  const shown = p.visible && opacity > 0.002 && (!reveal || reveal.r > 1);
   const filters = [
     blur > 0.05 ? `blur(${(blur * D).toFixed(2)}px)` : "",
     Math.abs(brightness - 1) > 0.005

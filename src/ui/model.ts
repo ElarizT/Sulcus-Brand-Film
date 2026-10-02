@@ -160,7 +160,7 @@ export const runAt = (script: RunScript, t: number) => {
         created_at: iso(a.at),
       };
     });
-  return { run, events: events.map(({ t: _t, ...e }) => e), approvals };
+  return { run, events: events.map((e) => ({ sequence: e.sequence, run_id: e.run_id, event: e.event })), approvals };
 };
 
 // The sequence number an event will have in the run's stream.

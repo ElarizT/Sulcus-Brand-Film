@@ -15,13 +15,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  BAR,
-  BEAT,
-  connectAt,
-  FILM_SECONDS,
-  T,
-} from "../src/film/timeline.ts";
+import { BAR, bar, BEAT, connectAt, FILM_SECONDS, T } from "../src/film/timeline.ts";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SR = 48000;
@@ -36,7 +30,6 @@ const db = (x: number) => Math.pow(10, x / 20);
 const toDb = (x: number) => 20 * Math.log10(Math.max(x, 1e-12));
 const clamp01 = (x: number) => (x < 0 ? 0 : x > 1 ? 1 : x);
 const midi = (m: number) => 440 * Math.pow(2, (m - 69) / 12);
-const bar = (b: number) => (b - 1) * BAR; // bars are 1-indexed, like a score
 
 let seed = 1234567;
 const rnd = () => {
@@ -518,14 +511,17 @@ const mixInto = (dst: Bus, src: Bus, gain: number | ((t: number) => number)) => 
 //
 // D minor at 96 BPM. Bars are 2.5 s; scenes change on bar lines.
 //
-//   bars  1– 4   0.0–10.0   The Agents      hum, air, sparse events
-//   bars  5– 9  10.0–22.5   Complexity      pulse → rhythm → riser
-//   bar  10     22.5–25.0   CONTROL ISN'T.  cut to near-silence
-//   bar  11     25.0–27.5   two pulses, swell
-//   bars 12–19  27.5–47.5   Sulcus          re-entry; see / step in / boundaries
-//   bars 20–23  47.5–57.5   One place       the build
-//   bars 24–27  57.5–67.5   Scale           the peak, then collapse
-//               68.1–74.0   End card        one impact, long tail, silence
+//   bars  1– 4   0.0–10.0   The Agents        hum, air, sparse events
+//   bars  5– 8  10.0–20.0   Complexity        pulse → rhythm → riser
+//   bar   9     20.0–22.5   CONTROL ISN'T.    cut to near-silence
+//   bar  10     22.5–25.0   two pulses on the first agent; a reversed swell
+//   bars 11–16  25.0–40.0   Into Sulcus, see, inspect     the groove returns
+//   bars 17–20  40.0–50.0   step in, boundaries           brighter
+//   bar  21     50.0–52.5   the run is stopped            the band drops out
+//   bars 22–26  52.5–65.0   many agents, the workspace
+//   bars 27–31  65.0–77.5   integrations, one place       lead line, the build
+//   bars 32–35  77.5–87.5   Scale                         the peak, then collapse
+//               88.1–94.0   End card                      one impact, long tail
 
 const D = {
   drone: bus(),
@@ -542,20 +538,25 @@ const D = {
   ping: bus(), // pitched pings (delay + long reverb)
 };
 
-// Chords from bar 12 on: i – VI – III – VII, one bar each.
+// Chords from bar 11 on: i – VI – III – VII, one bar each.
 type Chord = { root: number; tones: number[]; pad: number[] };
 const DM: Chord = { root: 38, tones: [62, 65, 69, 72, 74, 77], pad: [50, 57, 62, 65, 69] };
 const BB: Chord = { root: 34, tones: [58, 62, 65, 70, 74, 77], pad: [46, 53, 58, 62, 65] };
 const FM: Chord = { root: 41, tones: [60, 65, 69, 72, 77, 81], pad: [53, 57, 60, 65, 69] };
 const CM: Chord = { root: 36, tones: [60, 64, 67, 72, 76, 79], pad: [48, 55, 60, 64, 67] };
 const LOOP = [DM, BB, FM, CM];
-const chordAt = (b: number) => LOOP[(b - 12) % 4];
+const FIRST = 11; // the groove's first bar
+const chordAt = (b: number) => LOOP[(b - FIRST) % 4];
 
-// The structure of the score itself. These are bar lines, fixed by the
-// music: the big downbeats at bars 18, 20, 22, 24 and 26. Picture cues in T
-// may move between them; these do not.
-const HITS = [bar(18), bar(20), bar(22), bar(24), bar(26)];
-const PEAK = bar(24);
+// The structure of the score itself: the big downbeats, and the bar where
+// the band stops with the run.
+const HITS = [bar(17), bar(23), bar(27), bar(31), bar(32), bar(34)];
+const PEAK = bar(32);
+const STOP = 21; // bar(21) = T.limitHit
+const MID = 17; // brighter from here
+const LEAD = 27; // the lead line enters
+const level = (b: number) => (b < MID ? 0 : b < PEAK_BAR ? 1 : 2);
+const PEAK_BAR = 32;
 
 const FREEZE = T.freeze;
 const ONLINE = T.online;
@@ -569,17 +570,20 @@ const COLLAPSE = T.collapse;
         [0, 0],
         [2.2, 0.5],
         [10, 0.7],
-        [22.4, 1],
-        [22.55, 0.32],
-        [27.4, 0.3],
-        [27.6, 0.5],
-        [57.5, 0.55],
-        [66.2, 0.6],
-        [67.2, 0],
-        [68.1, 0],
-        [68.4, 0.55],
-        [72.2, 0.2],
-        [73.3, 0],
+        [FREEZE - 0.1, 1],
+        [FREEZE + 0.05, 0.32],
+        [ONLINE - 0.1, 0.3],
+        [ONLINE + 0.1, 0.5],
+        [T.limitHit, 0.5],
+        [T.limitHit + 0.1, 0.62],
+        [bar(22), 0.5],
+        [PEAK, 0.55],
+        [COLLAPSE - 0.05, 0.6],
+        [T.dark, 0],
+        [T.logo - 0.03, 0],
+        [T.logo + 0.27, 0.55],
+        [T.endFade - 0.4, 0.2],
+        [T.endDark - 0.1, 0],
       ],
       t,
     );
@@ -619,41 +623,44 @@ const COLLAPSE = T.collapse;
       [
         [4, 260],
         [10, 520],
-        [17.5, 1000],
-        [22.5, 2300],
+        [15, 1000],
+        [FREEZE, 2300],
       ],
       t,
     );
   for (const m of [50, 57, 65]) padNote(D.pad, 4.2, FREEZE - 0.02, midi(m), 0.3, open, 3.5, 0.03);
-  padNote(D.pad, 12.5, FREEZE - 0.02, midi(62), 0.24, open, 3, 0.03);
+  padNote(D.pad, 11.5, FREEZE - 0.02, midi(62), 0.24, open, 3, 0.03);
   // Tension: a flat second, then the tritone.
-  padNote(D.pad, 17.5, FREEZE - 0.02, midi(63), 0.24, open, 2.2, 0.03);
-  padNote(D.pad, 20, FREEZE - 0.02, midi(56), 0.3, open, 1.5, 0.03);
-  padNote(D.pad, 20, FREEZE - 0.02, midi(75), 0.16, open, 1.5, 0.03);
+  padNote(D.pad, 15, FREEZE - 0.02, midi(63), 0.24, open, 2.2, 0.03);
+  padNote(D.pad, 17.5, FREEZE - 0.02, midi(56), 0.3, open, 1.5, 0.03);
+  padNote(D.pad, 17.5, FREEZE - 0.02, midi(75), 0.16, open, 1.5, 0.03);
 
   // Sulcus onward: the progression, brighter with each act.
   const bright = (t: number) =>
     env(
       [
-        [27.5, 1500],
-        [29, 1000],
-        [42.5, 1300],
-        [47.5, 1900],
-        [57.5, 2500],
-        [62.5, 3400],
-        [66.2, 3600],
+        [ONLINE, 1500],
+        [ONLINE + 1.5, 1000],
+        [bar(MID), 1300],
+        [bar(LEAD), 1900],
+        [PEAK, 2500],
+        [T.climax, 3400],
+        [COLLAPSE, 3600],
       ],
       t,
     ) * (1.25 + 0.1 * Math.sin(t * 1.3));
-  for (let b = 12; b <= 27; b++) {
+  for (let b = FIRST; b <= 35; b++) {
     const c = chordAt(b);
     const t0 = bar(b);
     const t1 = Math.min(COLLAPSE, t0 + BAR);
     if (t0 >= COLLAPSE) break;
-    const g = b < 18 ? 0.36 : b < 24 ? 0.44 : 0.54;
-    for (const m of c.pad) padNote(D.pad, t0, t1 - 0.05, midi(m), g, bright, 0.22, 0.5);
+    // When the run is stopped the pad holds, darker, on its own.
+    const stopped = b === STOP;
+    const g = stopped ? 0.3 : [0.36, 0.44, 0.54][level(b)];
+    const cut = stopped ? () => 700 : bright;
+    for (const m of c.pad) padNote(D.pad, t0, t1 - 0.05, midi(m), g, cut, stopped ? 0.05 : 0.22, 0.5);
     // An octave of air on top from the build on.
-    if (b >= 20) padNote(D.pad, t0, t1 - 0.05, midi(c.pad[2] + 12), g * 0.5, bright, 0.3, 0.5);
+    if (b >= LEAD) padNote(D.pad, t0, t1 - 0.05, midi(c.pad[2] + 12), g * 0.5, bright, 0.3, 0.5);
   }
 
   // End card: an open fifth on D that just rings.
@@ -666,56 +673,60 @@ const COLLAPSE = T.collapse;
 {
   // Complexity: an eighth-note pulse on D that starts almost inaudible.
   for (let t = 10; t < FREEZE - 0.01; t += BEAT / 2) {
-    const g = env([[10, 0.1], [15, 0.34], [20, 0.5], [22.5, 0.62]], t);
-    const c = env([[10, 90], [15, 150], [22.5, 330]], t);
+    const g = env([[10, 0.1], [13.5, 0.34], [17.5, 0.5], [FREEZE, 0.62]], t);
+    const c = env([[10, 90], [13.5, 150], [FREEZE, 330]], t);
     bassNote(D.bass, t, midi(38), BEAT * 0.36, g, c);
     // Late in the act a second voice joins a sixteenth behind.
-    if (t >= 17.5) bassNote(D.bass, t + BEAT / 4, midi(50), BEAT * 0.18, g * 0.4, c * 1.5);
+    if (t >= 15) bassNote(D.bass, t + BEAT / 4, midi(50), BEAT * 0.18, g * 0.4, c * 1.5);
   }
   // Sulcus onward: eighths on the root, the off-beats lighter.
-  for (let b = 12; b <= 27; b++) {
+  for (let b = FIRST; b <= 35; b++) {
+    if (b === STOP) continue;
     const c = chordAt(b);
     for (let s = 0; s < 8; s++) {
       const t = bar(b) + (s * BEAT) / 2;
       if (t >= COLLAPSE) break;
-      const g = (s % 2 === 0 ? 0.72 : 0.5) * (b < 18 ? 0.85 : b < 24 ? 1 : 1.12);
-      const cut = b < 18 ? 190 : b < 24 ? 250 : 340;
+      const g = (s % 2 === 0 ? 0.72 : 0.5) * [0.85, 1, 1.12][level(b)];
+      const cut = [190, 250, 340][level(b)];
       bassNote(D.bass, t, midi(c.root), BEAT * 0.4, g, cut);
-      if (b >= 24 && s % 2 === 1) bassNote(D.bass, t, midi(c.root + 12), BEAT * 0.2, g * 0.35, cut * 1.6);
+      if (b >= PEAK_BAR && s % 2 === 1) bassNote(D.bass, t, midi(c.root + 12), BEAT * 0.2, g * 0.35, cut * 1.6);
     }
   }
+  // While the band is out, one long low D under the stopped run.
+  bassNote(D.bass, bar(STOP), midi(38), BAR * 0.9, 0.55, 120);
 }
 
 // ── arpeggio ────────────────────────────────────────────────────────────
 {
   const PATTERN = [0, 2, 1, 3, 2, 4, 3, 2, 0, 2, 1, 3, 2, 4, 3, 5];
   const ACCENT = [1, 0.5, 0.6, 0.85, 0.5, 0.6, 0.9, 0.5, 1, 0.5, 0.6, 0.85, 0.5, 0.6, 0.9, 0.6];
-  // Complexity, from bar 7: D minor seventh, then diminished for the riser.
+  // Complexity, from bar 6: D minor seventh, then diminished for the riser.
   const TENSE = [62, 65, 69, 72, 74, 77];
   const DIM = [62, 65, 68, 71, 74, 77];
-  for (let b = 7; b <= 9; b++)
+  for (let b = 6; b <= 8; b++)
     for (let s = 0; s < 16; s++) {
       const t = bar(b) + (s * BEAT) / 4;
-      const tones = b === 9 ? DIM : TENSE;
-      const g = env([[15, 0.12], [17.5, 0.3], [22.5, 0.5]], t) * ACCENT[s];
-      const cut = env([[15, 500], [20, 1300], [22.5, 2600]], t);
+      const tones = b === 8 ? DIM : TENSE;
+      const g = env([[12.5, 0.12], [15, 0.3], [FREEZE, 0.5]], t) * ACCENT[s];
+      const cut = env([[12.5, 500], [17.5, 1300], [FREEZE, 2600]], t);
       pluck(D.arp, t, midi(tones[PATTERN[s]]), 0.11, g, s % 2 ? 0.45 : -0.45, cut);
       // The last bar doubles up: 32nds, an octave higher.
-      if (b === 9 && s >= 8)
+      if (b === 8 && s >= 8)
         pluck(D.arp, t + BEAT / 8, midi(tones[PATTERN[s]] + 12), 0.07, g * 0.6, s % 2 ? -0.6 : 0.6, cut);
     }
   // Sulcus onward: the same figure, now on the progression and in time.
-  for (let b = 12; b <= 27; b++) {
+  for (let b = FIRST; b <= 35; b++) {
+    if (b === STOP) continue;
     const c = chordAt(b);
     for (let s = 0; s < 16; s++) {
       const t = bar(b) + (s * BEAT) / 4;
       if (t >= COLLAPSE) break;
       // It enters after the impact has cleared.
-      if (b === 12 && s < 8) continue;
-      const g = (b < 18 ? 0.26 : b < 24 ? 0.34 : 0.42) * ACCENT[s];
-      const cut = b < 18 ? 1500 : b < 24 ? 2300 : 3600;
+      if (b === FIRST && s < 8) continue;
+      const g = [0.26, 0.34, 0.42][level(b)] * ACCENT[s];
+      const cut = [1500, 2300, 3600][level(b)];
       pluck(D.arp, t, midi(c.tones[PATTERN[s]]), 0.13, g, s % 2 ? 0.4 : -0.4, cut);
-      if (b >= 24) pluck(D.arp, t, midi(c.tones[PATTERN[(s + 5) % 16]] + 12), 0.1, g * 0.5, s % 2 ? -0.65 : 0.65, cut);
+      if (b >= PEAK_BAR) pluck(D.arp, t, midi(c.tones[PATTERN[(s + 5) % 16]] + 12), 0.1, g * 0.5, s % 2 ? -0.65 : 0.65, cut);
     }
   }
 }
@@ -729,16 +740,16 @@ const COLLAPSE = T.collapse;
     C: [79, 76],
   };
   const key = (c: Chord) => (c === DM ? "D" : c === BB ? "B" : c === FM ? "F" : "C");
-  for (let b = 20; b <= 27; b++) {
+  for (let b = LEAD; b <= 35; b++) {
     const notes = LINE[key(chordAt(b))];
     for (let h = 0; h < 2; h++) {
       const t0 = bar(b) + h * BEAT * 2;
       if (t0 >= COLLAPSE) break;
       const t1 = Math.min(COLLAPSE, t0 + BEAT * 2);
-      const up = b >= 24 ? 12 : 0;
-      const g = b >= 24 ? 0.4 : 0.26;
-      padNote(D.lead, t0, t1 - 0.08, midi(notes[h] + up), g, () => (b >= 24 ? 4200 : 2600), 0.09, 0.45);
-      if (b >= 24) padNote(D.lead, t0, t1 - 0.08, midi(notes[h]), g * 0.7, () => 3000, 0.09, 0.45);
+      const up = b >= PEAK_BAR ? 12 : 0;
+      const g = b >= PEAK_BAR ? 0.4 : 0.26;
+      padNote(D.lead, t0, t1 - 0.08, midi(notes[h] + up), g, () => (b >= PEAK_BAR ? 4200 : 2600), 0.09, 0.45);
+      if (b >= PEAK_BAR) padNote(D.lead, t0, t1 - 0.08, midi(notes[h]), g * 0.7, () => 3000, 0.09, 0.45);
     }
   }
 }
@@ -759,27 +770,31 @@ const kicks: number[] = [];
     burst(D.hats, t, open ? 0.09 : 0.016, g, (rnd() - 0.5) * 0.5, 8200, 0.9, "hp");
 
   // Complexity: a heartbeat, then a kick, then hats crowding in.
-  for (let t = 10; t < 15; t += BEAT) tone(D.drums, t, 52, 0.09, env([[10, 0.1], [15, 0.3]], t), 0, [1]);
-  for (let b = 7; b <= 9; b++)
+  for (let t = 10; t < 12.5; t += BEAT) tone(D.drums, t, 52, 0.09, env([[10, 0.1], [12.5, 0.3]], t), 0, [1]);
+  for (let b = 6; b <= 8; b++)
     for (let q = 0; q < 4; q++) {
       const t = bar(b) + q * BEAT;
-      if (b < 9 ? q % 2 === 0 : true) K(t, b === 9 ? 0.85 : 0.7);
+      if (b < 8 ? q % 2 === 0 : true) K(t, b === 8 ? 0.85 : 0.7);
     }
-  for (let t = 12.5; t < FREEZE - 0.01; t += BEAT / 4) {
-    const step = Math.round((t - 12.5) / (BEAT / 4));
-    const dense = t >= 17.5;
+  for (let t = 11.25; t < FREEZE - 0.01; t += BEAT / 4) {
+    const step = Math.round((t - 11.25) / (BEAT / 4));
+    const dense = t >= 15;
     if (!dense && step % 2 === 1) continue;
-    hat(t, env([[12.5, 0.03], [17.5, 0.1], [22.5, 0.2]], t) * (step % 4 === 2 ? 1.5 : 1));
+    hat(t, env([[11.25, 0.03], [15, 0.1], [FREEZE, 0.2]], t) * (step % 4 === 2 ? 1.5 : 1));
   }
   // The roll into the cut: sixteenths, then thirty-seconds.
-  for (let t = 21.25; t < FREEZE - 0.01; t += t < 21.875 ? BEAT / 4 : BEAT / 8)
-    snap(t, env([[21.25, 0.12], [22.5, 0.5]], t));
+  for (let t = FREEZE - 1.25; t < FREEZE - 0.01; t += t < FREEZE - 0.625 ? BEAT / 4 : BEAT / 8)
+    snap(t, env([[FREEZE - 1.25, 0.12], [FREEZE, 0.5]], t));
 
   // Sulcus onward: half-time. Kick on one, a push before three, snap on three.
-  for (let b = 12; b <= 27; b++) {
+  for (let b = FIRST; b <= 35; b++) {
     const t0 = bar(b);
-    const big = b >= 24;
-    const mid = b >= 18;
+    if (b === STOP) {
+      K(t0, 1); // the stop itself
+      continue;
+    }
+    const big = b >= PEAK_BAR;
+    const mid = b >= MID;
     for (const [beat, g] of [
       [0, 1],
       [1.5, 0.72],
@@ -794,16 +809,18 @@ const kicks: number[] = [];
     for (let s = 0; s < 16; s++) {
       const t = t0 + (s * BEAT) / 4;
       if (t >= COLLAPSE) break;
-      if (b === 12 && s < 8) continue;
+      if (b === FIRST && s < 8) continue;
+      // Coming back after the stop, the hats wait for the second half.
+      if (b === STOP + 1 && s < 8) continue;
       const accent = s % 4 === 2 ? 1.6 : s % 2 === 0 ? 1 : 0.6;
       hat(t, (big ? 0.15 : mid ? 0.12 : 0.085) * accent, mid && s % 8 === 6);
     }
   }
-  // Fills into the two big downbeats.
-  for (const [end, from] of [[bar(18), 41.25], [PEAK, 55]])
+  // Fills into the downbeats that open each act.
+  for (const [end, from] of [[bar(MID), bar(MID) - 1.25], [bar(23), bar(23) - 1.25], [bar(LEAD), bar(LEAD) - 1.25], [PEAK, PEAK - 2.5]])
     for (let t = from; t < end - 0.01; t += t < end - BEAT ? BEAT / 4 : BEAT / 8)
       snap(t, env([[from, 0.08], [end, 0.5]], t));
-  for (const t of [bar(18) - BEAT, bar(18) - BEAT / 2, PEAK - BEAT, PEAK - BEAT / 2])
+  for (const t of [bar(MID) - BEAT, bar(MID) - BEAT / 2, PEAK - BEAT, PEAK - BEAT / 2])
     tone(D.drums, t, 82, 0.16, 0.5, 0, [1, 0.3], 0.7);
 }
 
@@ -814,22 +831,28 @@ const kicks: number[] = [];
   // CONTROL ISN'T.: everything stops on a single low hit.
   boom(D.hits, FREEZE, 110, 34, 0.42, 1.3);
   burst(D.hits, FREEZE, 0.12, 0.9, 0, 300, 0.8, "lp");
-  // Sulcus online.
+  // The path snaps into structure: Sulcus.
   boom(D.hits, ONLINE, 120, 36.7, 1.3, 1.3);
   crash(ONLINE, 0.34, 1.7);
   for (const m of [38, 45, 50, 57, 62])
     padNote(D.hits, ONLINE, ONLINE + 0.25, midi(m), 0.4, (t) => 3200 * Math.exp(-(t - ONLINE) / 0.9) + 300, 0.008, 3.2);
   // Bar-line weight through the governed acts.
-  for (let b = 13; b <= 27; b++) {
+  for (let b = FIRST + 1; b <= 35; b++) {
     const t = bar(b);
     if (t >= COLLAPSE) break;
     const strong = HITS.includes(t);
     if (strong) {
       boom(D.hits, t, 105, 36.7, 0.9, t >= PEAK ? 1.1 : 0.9);
       crash(t, t >= PEAK ? 0.36 : 0.26, 1.6);
-    } else if (b % 2 === 0) boom(D.hits, t, 80, 36.7, 0.6, 0.45);
-    if (b >= 24) crash(t, 0.2, 1.1);
+    } else if (b % 2 === 1 && b !== STOP) boom(D.hits, t, 80, 36.7, 0.6, 0.45);
+    if (b >= PEAK_BAR) crash(t, 0.2, 1.1);
   }
+  // The run is stopped at its limit: a hard, dry stop.
+  boom(D.hits, T.limitHit, 130, 40, 0.5, 1.15);
+  burst(D.hits, T.limitHit, 0.09, 0.8, 0, 420, 0.8, "lp");
+  // The window lands on the ground: the ground comes on.
+  boom(D.hits, T.land, 115, 36.7, 1.1, 1.0);
+  crash(T.land, 0.24, 1.8);
   // End card.
   boom(D.hits, T.logo, 100, 36.7, 1.2, 1.15);
   crash(T.logo, 0.14, 2.0);
@@ -839,14 +862,21 @@ const kicks: number[] = [];
 {
   const rise = (x: number) => Math.pow(x, 2.4);
   // Into the freeze: two bars of everything climbing.
-  sweep(D.rise, 17.5, FREEZE, 300, 9000, 0.5, rise);
-  glideSaw(D.rise, 20, FREEZE, midi(50), midi(74), 0.4, rise, 1200);
-  glideSaw(D.rise, 20, FREEZE, midi(56), midi(80), 0.26, rise, 1500);
+  sweep(D.rise, 15, FREEZE, 300, 9000, 0.5, rise);
+  glideSaw(D.rise, 17.5, FREEZE, midi(50), midi(74), 0.4, rise, 1200);
+  glideSaw(D.rise, 17.5, FREEZE, midi(56), midi(80), 0.26, rise, 1500);
   // Into Sulcus: a reversed breath, out of the silence.
-  sweep(D.rise, 26.2, ONLINE, 600, 5200, 0.34, (x) => Math.pow(x, 3.2));
-  glideSaw(D.rise, 26.6, ONLINE, midi(38), midi(50), 0.22, (x) => Math.pow(x, 3), 500);
-  // Into the unify, the two title hits and the scale reveal.
-  for (const [t, len, g] of [[HITS[0], 1.6, 0.26], [HITS[1], 2.2, 0.32], [HITS[2], 1.6, 0.24], [HITS[3], 3.4, 0.46], [HITS[4], 1.8, 0.34]])
+  sweep(D.rise, ONLINE - 1.3, ONLINE, 600, 5200, 0.34, (x) => Math.pow(x, 3.2));
+  glideSaw(D.rise, ONLINE - 0.9, ONLINE, midi(38), midi(50), 0.22, (x) => Math.pow(x, 3), 500);
+  // Into each big downbeat.
+  for (const [t, len, g] of [
+    [HITS[0], 1.6, 0.26],
+    [HITS[1], 2.2, 0.3],
+    [HITS[2], 1.6, 0.26],
+    [HITS[3], 2.2, 0.32],
+    [HITS[4], 2.4, 0.46],
+    [HITS[5], 1.8, 0.34],
+  ])
     sweep(D.rise, t - len, t, 400, 8000, g, rise);
   glideSaw(D.rise, PEAK - 2.5, PEAK, midi(50), midi(74), 0.26, rise, 1400);
   // The collapse: everything falls into the core.
@@ -865,6 +895,11 @@ const kicks: number[] = [];
     burst(D.fx, t, 0.006, g, pan, fc, 2.5, "bp");
   const ping = (t: number, f: number, g: number, pan = 0, decay = 0.4) =>
     tone(D.ping, t, f, decay, g, pan, [1, 0.35, 0.12]);
+  const whoosh = (t0: number, t1: number, f0: number, f1: number, g: number) =>
+    sweep(D.fx, t0, t1, f0, f1, g, (x) => Math.sin(Math.PI * x));
+  const typing = (t: number, n: number, g: number, pan = 0) => {
+    for (let k = 0; k < n; k++) click(t + k * 0.045 + rnd() * 0.01, g, pan, 2800 + rnd() * 1600);
+  };
 
   // The Agents — one event at a time.
   sample(D.rec, "agent-start", T.agentStart - 0.02, -15); // an agent starts
@@ -891,110 +926,124 @@ const kicks: number[] = [];
   // Complexity — execution ticks, accelerating; warnings; unanswered requests.
   const SCALE = [74, 77, 79, 81, 84, 86, 89, 91];
   for (let t = 9; t < FREEZE - 0.02; ) {
-    const rate = env([[9, 1.5], [14, 5], [19, 13], [22.5, 30]], t);
+    const rate = env([[9, 1.5], [13, 5], [17, 13], [FREEZE, 30]], t);
     t += (0.4 + rnd() * 1.2) / rate;
     if (t >= FREEZE - 0.02) break;
-    const g = env([[9, 0.07], [16, 0.11], [22.5, 0.16]], t);
+    const g = env([[9, 0.07], [14.5, 0.11], [FREEZE, 0.16]], t);
     const pan = rnd() * 1.6 - 0.8;
     if (rnd() < 0.55) click(t, g * 2.2, pan, 1800 + rnd() * 5000);
     else blip(t, midi(SCALE[Math.floor(rnd() * SCALE.length)]), g, pan, 0.02 + rnd() * 0.02);
   }
   // Warnings: a flat, minor-second two-tone, more of them toward the end.
-  for (let t = 13.6; t < FREEZE - 0.1; ) {
-    const g = env([[13, 0.08], [22.5, 0.2]], t);
+  for (let t = 12.4; t < FREEZE - 0.1; ) {
+    const g = env([[12, 0.08], [FREEZE, 0.2]], t);
     const pan = rnd() * 1.4 - 0.7;
     blip(t, 622, g, pan, 0.05);
     blip(t + 0.09, 587, g, pan, 0.07);
-    t += env([[13, 2.3], [18, 1.2], [22.5, 0.35]], t) * (0.6 + rnd() * 0.8);
+    t += env([[12, 2.3], [16, 1.2], [FREEZE, 0.35]], t) * (0.6 + rnd() * 0.8);
   }
-  sample(D.rec, "warning-rise", 17.5, -20);
-  sample(D.rec, "warning-rise", 20.6, -17);
-  sample(D.rec, "approval-request", 13.1, -24); // a permission request, unanswered
-  sample(D.rec, "approval-request", 18.2, -22);
+  sample(D.rec, "warning-rise", 15.0, -20);
+  sample(D.rec, "warning-rise", 18.1, -17);
+  sample(D.rec, "approval-request", 11.8, -24); // a permission request, unanswered
+  sample(D.rec, "approval-request", 16.2, -22);
 
-  // Sulcus — two pulses in the silence.
+  // Into Sulcus — two pulses in the silence, on the first agent.
   ping(T.pulse1, midi(74), 0.42, 0, 0.7);
   blip(T.pulse1, midi(86), 0.1, 0, 0.12);
   ping(T.pulse2, midi(74), 0.5, 0, 0.7);
   ping(T.pulse2, midi(81), 0.2, 0, 0.6);
+  // Light runs out along its paths.
+  for (let i = 0; i < 6; i++) click(T.pulse2 + 0.1 + i * 0.09, 0.16, (i - 2.5) / 4, 3400 + i * 200);
   sample(D.rec, "control-engage", ONLINE - 0.03, -12);
-  // The plane takes each agent: a run of locks, rising.
-  for (let i = 0; i < 26; i++) {
-    const t = ONLINE + 0.25 + Math.pow(i / 26, 0.8) * 1.3;
-    click(t, 0.3, rnd() * 1.4 - 0.7, 2600 + i * 120);
-    if (i % 3 === 0) blip(t, midi(74 + [0, 3, 7, 10, 12][i % 5]), 0.09, rnd() * 1.2 - 0.6, 0.05);
+  // Every node lands on the element of the interface it is: a run of locks.
+  for (let i = 0; i < 12; i++) {
+    const t = ONLINE + 1.3 + Math.pow(i / 12, 0.9) * 0.4;
+    click(t, 0.28, rnd() * 1.2 - 0.6, 2600 + i * 140);
+    if (i % 3 === 0) blip(t, midi(74 + [0, 3, 7, 10][i % 4]), 0.08, rnd() * 1.2 - 0.6, 0.05);
   }
-  // Boundaries close, one tree at a time.
-  sample(D.rec, "policy-lock", T.boundaries + 0.5, -19);
-  for (let i = 0; i < 7; i++) {
-    const t = T.boundaries + i * 0.12 + 0.7;
-    click(t, 0.3, (i - 3) / 4, 1500);
-    tone(D.fx, t, 130, 0.05, 0.18, (i - 3) / 4, [1, 0.5]);
-  }
-  // Timelines align.
-  for (let i = 0; i < 12; i++) click(T.timelines + i * 0.05, 0.12, -0.4 + i * 0.05, 3200 + i * 150);
+  // The interface resolves around it.
+  sweep(D.fx, T.uiIn, T.uiFull, 900, 6000, 0.035, (x) => Math.sin(Math.PI * x) * x);
+  // Pulling back to the whole app.
+  whoosh(T.uiFull, T.see, 2400, 700, 0.03);
 
-  // See — a branch is selected: three steps up the tree, root to call.
+  // SEE — execution lights each row, root first.
   [62, 69, 74].forEach((m, i) => {
-    const t = T.select + i * 0.17;
-    blip(t, midi(m + 12), 0.15, -0.1 + i * 0.1, 0.06);
-    click(t, 0.3, -0.1 + i * 0.1, 2600 + i * 500);
+    const t = T.see + 0.2 + i * 0.28;
+    blip(t, midi(m + 12), 0.14, -0.2 + i * 0.2, 0.06);
+    click(t, 0.24, -0.2 + i * 0.2, 2600 + i * 500);
   });
-  tone(D.fx, T.select, 98, 0.1, 0.26, 0, [1, 0.5]);
-  // The inspector opens: a soft unfold, then one tick per row as it types.
-  sweep(D.fx, T.inspect, T.inspect + 0.4, 1200, 4200, 0.035, (x) => Math.sin(Math.PI * x));
-  for (let i = 0; i < 5; i++) {
-    const t = T.inspect + 0.2 + i * 0.28;
-    for (let k = 0; k < 4; k++) click(t + k * 0.045, 0.11, -0.45, 3000 + k * 300 + i * 120);
-  }
-  // The call fails, is retried, fails, is retried, succeeds.
-  for (const t of [T.retryFail, T.retryAgain]) {
-    blip(t, 440, 0.2, 0.25, 0.06);
-    blip(t + 0.09, 415, 0.17, 0.25, 0.08);
-    burst(D.fx, t, 0.04, 0.3, 0.25, 500, 1, "lp");
-  }
-  blip(T.retryOk, 880, 0.18, 0.25, 0.05);
-  blip(T.retryOk + 0.08, 1175, 0.18, 0.25, 0.1);
-  ping(T.retryOk, midi(81), 0.1, 0.25, 0.4);
+  // The Researcher is selected: down the tree, and its row opens.
+  click(T.select - 0.3, 0.3, -0.2, 2400);
+  blip(T.select, midi(81), 0.14, -0.1, 0.07);
+  click(T.select, 0.42, -0.1, 1900);
+  whoosh(T.select, T.select + 0.25, 1500, 4200, 0.03);
+  // New calls appear on its row as they happen.
+  for (const t of [33.04, 33.1, 34.94, 36.0]) click(t, 0.16, 0.3, 4200);
+  // Inspect — the camera dives onto one call…
+  whoosh(T.inspect - 0.1, T.inspect + 0.7, 600, 3400, 0.05);
+  ping(T.inspect + 0.4, midi(86), 0.12, 0.2, 0.4);
+  // …the event log opens, the page drops to it, and that call's event opens.
+  click(T.logOpen, 0.36, 0, 2000);
+  whoosh(T.logOpen, T.logOpen + 0.8, 2600, 900, 0.035);
+  click(T.rowOpen, 0.4, -0.1, 2200);
+  typing(T.rowOpen + 0.05, 10, 0.08, -0.2);
+  whoosh(T.inspectOut, T.approvalAsk, 900, 2600, 0.03);
 
-  // Step in — the call is held at the gate.
+  // Step in — the call waits for a decision; the run pauses.
   sample(D.rec, "approval-request", T.approvalAsk - 0.02, -13);
-  click(T.approvalAsk, 0.5, 0, 1400);
-  tone(D.fx, T.approvalAsk, 110, 0.09, 0.32, 0, [1, 0.5]);
-  for (let i = 0; i < 3; i++)
-    for (let k = 0; k < 4; k++) click(T.approvalAsk + 0.25 + i * 0.25 + k * 0.045, 0.1, 0.4, 3000 + k * 300);
+  click(T.approvalAsk + 0.15, 0.5, 0.2, 1400);
+  tone(D.fx, T.approvalAsk + 0.15, 110, 0.09, 0.32, 0.2, [1, 0.5]);
   // It waits: a quiet tick on each beat while nothing moves.
-  for (let t = T.approvalAsk + BEAT; t < T.approvalGrant - 0.9; t += BEAT)
-    blip(t, midi(74), 0.07, 0, 0.05);
-  // Approve is chosen, then pressed on the bar line.
-  click(T.approvalGrant - 0.8, 0.34, 0.3, 2200);
-  blip(T.approvalGrant - 0.8, midi(86), 0.08, 0.3, 0.04);
+  for (let t = T.approvalAsk + BEAT; t < T.approvalChoose - 0.1; t += BEAT) blip(t, midi(74), 0.07, 0.2, 0.05);
+  // Approve is lit, then pressed.
+  click(T.approvalChoose, 0.28, 0.3, 2400);
+  blip(T.approvalChoose, midi(86), 0.07, 0.3, 0.04);
   sample(D.rec, "approval-confirm", T.approvalGrant - 0.02, -12);
   click(T.approvalGrant, 0.55, 0.3, 1800);
-  ping(T.approvalGrant, midi(81), 0.2, 0, 0.5);
-  ping(T.approvalGrant + 0.1, midi(86), 0.2, 0, 0.6);
-  click(T.approvalGrant + 0.35, 0.3, -0.2, 3600); // the call lands
+  // The decision lands: execution resumes at once.
+  ping(T.approvalDone, midi(81), 0.2, 0.1, 0.5);
+  ping(T.approvalDone + 0.1, midi(86), 0.2, 0.1, 0.6);
+  whoosh(T.approvalDone, T.approvalDone + 0.6, 1400, 4800, 0.04);
+  for (let i = 0; i < 5; i++) click(T.approvalDone + 0.2 + i * 0.12, 0.18, 0.4, 3200 + i * 300);
 
-  // Boundaries — they arm, tree by tree.
+  // Boundaries — the limit, as it was set…
   sample(D.rec, "policy-lock", T.bounds - 0.02, -15);
-  for (let i = 0; i < 7; i++) {
-    const t = T.bounds + Math.abs(i - 3.5) * 0.11;
-    click(t + 0.3, 0.3, (i - 3) / 4, 1300);
-    tone(D.fx, t + 0.3, 110, 0.06, 0.2, (i - 3) / 4, [1, 0.5]);
-  }
-  // A token budget: the gauge climbs, and is stopped.
-  for (let i = 0; i < 8; i++) blip(T.limitHit - 1.0 + i * 0.125, 520 + i * 70, 0.07, -0.3, 0.02);
-  tone(D.fx, T.limitHit, 98, 0.12, 0.4, -0.3, [1, 0.6, 0.3]);
-  click(T.limitHit, 0.5, -0.3, 1200);
-  blip(T.limitHit + 0.02, midi(74), 0.1, -0.3, 0.08);
-  // A call runs at the wall and stops dead.
-  sweep(D.fx, T.blocked - 0.7, T.blocked, 900, 3600, 0.05, (x) => x * x);
-  boom(D.fx, T.blocked, 140, 60, 0.12, 0.2);
-  burst(D.fx, T.blocked, 0.03, 0.6, 0.35, 900, 1.2, "bp");
-  blip(T.blocked + 0.03, 311, 0.2, 0.35, 0.09);
-  blip(T.blocked + 0.14, 294, 0.18, 0.35, 0.12);
+  whoosh(T.bounds, T.bounds + 0.9, 700, 2400, 0.03);
+  typing(T.bounds + 0.6, 5, 0.1, -0.3);
+  // …carried into the run.
+  sweep(D.fx, T.bounds + 1.3, T.bounds + 2.2, 900, 4200, 0.05, (x) => x * x);
+  click(T.bounds + 2.2, 0.45, 0.3, 1500);
+  tone(D.fx, T.bounds + 2.2, 110, 0.06, 0.24, 0.3, [1, 0.5]);
+  // Usage climbs…
+  for (let i = 0; i < 8; i++) blip(47.6 + i * 0.14, 520 + i * 70, 0.06, 0.3, 0.02);
+  // …past 80 %…
+  blip(T.limitWarn, 622, 0.18, 0.3, 0.06);
+  blip(T.limitWarn + 0.1, 587, 0.16, 0.3, 0.08);
+  // …and the next call will not fit. Sulcus stops the run.
+  click(T.limitHit, 0.6, 0, 1200);
+  blip(T.limitHit + 0.03, 311, 0.22, 0, 0.09);
+  blip(T.limitHit + 0.14, 294, 0.2, 0, 0.12);
+  sample(D.rec, "policy-lock", T.limitHit + 0.05, -14);
 
-  // One place — seven ecosystems join, one per beat, climbing the scale.
+  // One run steps back; another comes forward.
+  whoosh(T.limitHit + 2.6, T.many - 0.2, 400, 2200, 0.05);
+  // Many agents: one completes, one fails, one joins, one waits.
+  ping(T.manyDone, midi(81), 0.16, -0.3, 0.45);
+  ping(T.manyDone + 0.08, midi(86), 0.12, -0.3, 0.5);
+  blip(T.manyFail, 440, 0.18, 0.3, 0.06);
+  blip(T.manyFail + 0.09, 415, 0.16, 0.3, 0.08);
+  ping(T.manyStart, midi(77), 0.12, 0.1, 0.4);
+  sample(D.rec, "approval-request", T.manyApproval - 0.02, -17);
+  click(T.manyApproval + 0.15, 0.36, 0.3, 1400);
+
+  // The workspace; then the Runs page, and the window is laid down.
+  whoosh(T.projects, T.projects + 0.6, 2000, 700, 0.035);
+  click(T.projects + 0.1, 0.3, 0, 2200);
+  click(T.integrate, 0.32, 0, 2200);
+  sweep(D.fx, T.integrate - 0.2, T.land, 3000, 300, 0.05, (x) => Math.sin(Math.PI * x) * (1 - x * 0.4));
+  sample(D.rec, "control-engage", T.land - 0.03, -13);
+
+  // Seven systems connect, one per beat, climbing the scale.
   const JOIN = [62, 65, 67, 69, 72, 74, 77];
   JOIN.forEach((m, i) => {
     const t = connectAt(i);
@@ -1002,29 +1051,16 @@ const kicks: number[] = [];
     ping(t, midi(m + 12), 0.26, pan, 0.45);
     click(t, 0.34, pan, 2400);
     tone(D.fx, t, midi(m - 12), 0.07, 0.22, pan, [1, 0.4]);
-    click(t + 0.6, 0.22, 0, 3600); // its stream reaches the core
+    click(t + 0.6, 0.26, 0, 3600); // its run lands in the list
   });
-  // The scan reads the state of all seven.
+  // Their runs, one structure: past each, a pass.
+  for (const t of [71.9, 72.9, 73.9, 74.9]) whoosh(t - 0.45, t + 0.35, 500, 2600, 0.04);
+  // One place: the core takes them all.
   sweep(D.fx, T.onePlace, T.onePlace + 1.7, 900, 5200, 0.05, (x) => Math.sin(Math.PI * x));
   for (let i = 0; i < 7; i++) {
-    const t = T.onePlace + i * 0.2;
+    const t = T.onePlace + 0.15 + i * 0.2;
     blip(t, midi(74 + [0, 3, 5, 7, 10, 12, 15][i]), 0.13, (i - 3) / 4, 0.05);
     click(t + 0.05, 0.2, (i - 3) / 4, 4200);
-  }
-  // Control goes out from the core: pause, then resume.
-  for (const [at, up] of [[T.command, false], [T.resume, true]] as const) {
-    for (let k = 0; k < 6; k++) click(at - 0.4 + k * 0.05, 0.12, 0, 3000 + k * 250); // the command, typed
-    click(at, 0.5, 0, 1500);
-    tone(D.fx, at, 147, 0.07, 0.3, 0, [1, 0.5]);
-    sweep(D.fx, at, at + 0.5, up ? 1200 : 3600, up ? 3600 : 1200, 0.06, (x) => Math.sin(Math.PI * x)); // it travels
-    click(at + 0.5, 0.42, 0.6, 1300); // it lands
-    if (up) {
-      ping(at + 0.5, midi(81), 0.16, 0.6, 0.45);
-      ping(at + 0.58, midi(86), 0.14, 0.6, 0.5);
-    } else {
-      tone(D.fx, at + 0.5, 110, 0.1, 0.3, 0.6, [1, 0.5, 0.2]);
-      blip(at + 0.5, midi(69), 0.12, 0.6, 0.1);
-    }
   }
 
   // Scale — the rings arrive in waves.
@@ -1090,16 +1126,19 @@ const SEND: Record<keyof typeof LEVEL, [number, number, number]> = {
 // Stem levels by section, for balancing by numbers.
 const SECTIONS: [string, number, number][] = [
   ["Agents", 0, 10],
-  ["Complex", 10, 20],
-  ["Riser", 20, 22.5],
-  ["Freeze", 22.7, 25],
-  ["Pulses", 25, 27.5],
-  ["Sulcus", 27.5, 42.5],
-  ["Layer", 42.5, 57.5],
-  ["Scale", 57.5, 66.25],
-  ["Dark", 67.2, 68.1],
-  ["End", 68.1, 70],
-  ["Tail", 70, 73.5],
+  ["Complex", 10, 17.5],
+  ["Riser", 17.5, 20],
+  ["Freeze", 20.2, 22.5],
+  ["Pulses", 22.5, 25],
+  ["Sulcus", 25, 40],
+  ["StepIn", 40, 50],
+  ["Stop", 50, 52.5],
+  ["Many", 52.5, 65],
+  ["Integr", 65, 77.5],
+  ["Scale", 77.5, 86.25],
+  ["Dark", 87.2, 88.1],
+  ["End", 88.1, 90],
+  ["Tail", 90, 93.5],
 ];
 const rmsOf = (b: Bus, a: number, z: number, g = 1) => {
   const i0 = Math.round(a * SR);
@@ -1146,15 +1185,15 @@ mixInto(mix, hall, (t) =>
   env(
     [
       [0, 1],
-      [22.5, 1],
-      [22.7, 0.4],
-      [25, 0.7],
-      [27.5, 1],
-      [66.3, 1],
-      [67.2, 0.5],
-      [68.1, 1],
-      [72.4, 1],
-      [73.6, 0],
+      [T.freeze, 1],
+      [T.freeze + 0.2, 0.4],
+      [T.pulse1, 0.7],
+      [T.online, 1],
+      [COLLAPSE + 0.05, 1],
+      [T.dark, 0.5],
+      [T.logo, 1],
+      [T.endFade - 0.2, 1],
+      [T.endDark + 0.2, 0],
     ],
     t,
   ),
@@ -1177,14 +1216,16 @@ mixInto(mix, hall, (t) =>
   for (let i = 0; i < N; i++) {
     const g = env(
       [
-        [27.5, 1],
-        [29.5, 0.84],
-        [42.3, 0.84],
-        [42.6, 0.95],
-        [57.3, 1],
-        [57.6, 1.14],
-        [66.3, 1.18],
-        [67, 1],
+        [T.online, 1],
+        [T.online + 2, 0.84],
+        [bar(17) - 0.2, 0.84],
+        [bar(17) + 0.1, 0.95],
+        [bar(27) - 0.2, 0.95],
+        [bar(27) + 0.1, 1],
+        [bar(32) - 0.2, 1],
+        [bar(32) + 0.1, 1.14],
+        [COLLAPSE + 0.05, 1.18],
+        [COLLAPSE + 0.75, 1],
       ],
       i / SR,
     );

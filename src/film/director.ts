@@ -153,12 +153,14 @@ export const windowsAt = (t: number, cam: Camera, project: Projector): WindowSpe
 
   // W1: research-agent, from the moment it resolves around the path that
   // became it, until it slides away.
-  if (t >= T.uiIn - 0.1 && w1Opacity(t) > 0) {
+  // It is laid out (hidden) from the moment the path starts to straighten, so
+  // every node already knows where in the interface it is going.
+  if (t >= T.online - 0.1 && w1Opacity(t) > 0) {
     const pl = w1(t);
     const page = researchPage(t);
     const reveal =
       t < T.uiFull + 0.4
-        ? { x: 560, y: 270, r: 2700 * easeIn(ramp(t, T.uiIn, T.uiFull + 0.4)), soft: 420 }
+        ? { x: 560, y: 270, r: Math.max(0.5, 2700 * easeIn(ramp(t, T.uiIn, T.uiFull + 0.4))), soft: 420 }
         : undefined;
     out.push({
       key: "w1",
@@ -215,7 +217,7 @@ export const windowsAt = (t: number, cam: Camera, project: Projector): WindowSpe
         vars,
         after: W2_MEASURE,
         opacity: toRuns,
-        brightness: 1 + 1.8 * ramp(t, T.collapse, T.collapse + 0.6),
+        brightness: 1 + 1.5 * ramp(t, T.collapse - 0.3, T.collapse + 0.3),
         sink: toRuns >= 1 ? "w2" : undefined,
         // Seen from far off, the window is a lit slab at the core.
         focus: undefined,

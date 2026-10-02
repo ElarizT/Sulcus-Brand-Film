@@ -200,9 +200,12 @@ const build = () => {
         }
       }
     }
-    // The first agent's opening moves are a tool call and a file write.
+    // The first agent's opening moves are a tool call and a file write:
+    // reading the brief and writing a plan, as in the run it becomes.
     if (followed) {
-      add(s, root, 1, "tool", R);
+      const read = add(s, root, 1, "tool", R);
+      nodes[read].label = "read_file";
+      nodes[read].event = "tool.call  read_file";
       add(s, root, 1, "file", R);
     }
   }

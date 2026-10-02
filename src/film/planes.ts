@@ -57,7 +57,7 @@ export const w2 = (t: number): Plane => {
 };
 // It is the last thing to go: as everything falls into the core it burns
 // out in the flare.
-export const w2Opacity = (t: number) => ramp(t, SWAP_A + 0.2, SWAP_A + 1.0) * (1 - ramp(t, T.collapse + 0.3, T.collapse + 0.75));
+export const w2Opacity = (t: number) => ramp(t, SWAP_A + 0.2, SWAP_A + 1.0) * (1 - ramp(t, T.collapse, T.collapse + 0.4));
 
 // The New run form's Controls panel, which floats in front of W1 while the
 // limit is set, then sinks into the run's TOKENS readout.

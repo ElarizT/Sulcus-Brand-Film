@@ -82,7 +82,7 @@ const build = (): RunScript => {
   oa.tool(32.0, 32.5, V, "read_file", call("v"));
   oa.tool(33.1, 34.94, R, "search_web", INSPECTED_CALL);
   oa.llm(33.6, 34.4, C, call("c"), 1060, LIMIT);
-  oa.llm(35.3, 36.9, R, call("r"), 3310, LIMIT);
+  oa.llm(36.0, 36.95, R, call("r"), 3310, LIMIT);
   oa.tool(37.1, 37.5, R, "read_file", call("r"));
   oa.llm(37.2, 39.3, V, call("v"), 2690, LIMIT);
   oa.tool(37.9, 38.3, R, "write_file", call("r"));
