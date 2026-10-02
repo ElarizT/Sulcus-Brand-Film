@@ -102,15 +102,19 @@ export class Renderer {
     this.bloomB.height = Math.ceil(canvas.height / 8);
   }
 
-  begin() {
+  begin(transparent = false) {
     const c = this.ctx;
     c.setTransform(this.S, 0, 0, this.S, 0, 0);
     c.globalCompositeOperation = "source-over";
     c.globalAlpha = 1;
     c.filter = "none";
     // Pure black under the light: the bloom then adds nothing to empty space.
-    c.fillStyle = "#000";
-    c.fillRect(0, 0, this.W, this.H);
+    // A light layer over the Sulcus UI starts empty and is added on top of it.
+    c.clearRect(0, 0, this.W, this.H);
+    if (!transparent) {
+      c.fillStyle = "#000";
+      c.fillRect(0, 0, this.W, this.H);
+    }
     c.globalCompositeOperation = "lighter";
     c.lineCap = "butt";
     c.lineJoin = "round";

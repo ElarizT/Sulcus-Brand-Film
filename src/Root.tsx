@@ -1,5 +1,7 @@
 import { Composition, Folder } from "remotion";
 import { Atmosphere } from "./components/Atmosphere";
+import { FontTest } from "./debug/FontTest";
+import { UITest } from "./debug/UITest";
 import {
   FILM_FRAMES,
   FPS,
@@ -10,32 +12,22 @@ import {
   type SceneId,
   WIDTH,
 } from "./film/timeline";
-import { Complexity } from "./scenes/Complexity";
-import { EndCard } from "./scenes/EndCard";
-import { IntroAgents } from "./scenes/IntroAgents";
-import { ScaleSequence } from "./scenes/ScaleSequence";
-import { SulcusReveal } from "./scenes/SulcusReveal";
-import { UnifiedRuntime } from "./scenes/UnifiedRuntime";
+import { SCENE_LIST } from "./SulcusFilm";
 import { SulcusFilm } from "./SulcusFilm";
+import { useFonts } from "./theme/typography";
 
 // A scene on its own, with the film's grain and vignette, for scrubbing.
 const standalone = (Scene: React.FC) => {
-  const Standalone: React.FC = () => (
-    <>
-      <Scene />
-      <Atmosphere />
-    </>
-  );
+  const Standalone: React.FC = () => {
+    useFonts();
+    return (
+      <>
+        <Scene />
+        <Atmosphere />
+      </>
+    );
+  };
   return Standalone;
-};
-
-const SCENE_COMPONENTS: Record<SceneId, React.FC> = {
-  IntroAgents: standalone(IntroAgents),
-  Complexity: standalone(Complexity),
-  SulcusReveal: standalone(SulcusReveal),
-  UnifiedRuntime: standalone(UnifiedRuntime),
-  ScaleSequence: standalone(ScaleSequence),
-  EndCard: standalone(EndCard),
 };
 
 export const RemotionRoot: React.FC = () => (
@@ -59,17 +51,21 @@ export const RemotionRoot: React.FC = () => (
       height={LOGICAL_H}
     />
     <Folder name="Scenes">
-      {(Object.keys(SCENE_COMPONENTS) as SceneId[]).map((id) => (
+      {SCENE_LIST.map(([id, Scene]: [SceneId, React.FC]) => (
         <Composition
           key={id}
           id={id}
-          component={SCENE_COMPONENTS[id]}
+          component={standalone(Scene)}
           durationInFrames={sceneFrames(id).durationInFrames}
           fps={FPS}
           width={LOGICAL_W}
           height={LOGICAL_H}
         />
       ))}
+    </Folder>
+    <Folder name="Debug">
+      <Composition id="UITest" component={UITest} durationInFrames={FILM_FRAMES} fps={FPS} width={LOGICAL_W} height={LOGICAL_H} />
+      <Composition id="FontTest" component={FontTest} durationInFrames={1} fps={FPS} width={LOGICAL_W} height={LOGICAL_H} />
     </Folder>
   </>
 );

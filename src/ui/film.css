@@ -1,0 +1,76 @@
+/* What the film changes about how the Sulcus Cloud stylesheet renders.
+   app.scoped.css is the product's stylesheet; this file only adapts it to
+   being rendered one frame at a time inside a film. */
+
+/* A UI plane is a browser window of a fixed size, not the viewport. */
+.sulcus-ui {
+  position: relative;
+  overflow: hidden;
+}
+.sulcus-ui .app-shell,
+.sulcus-ui .sidebar {
+  min-height: var(--film-h);
+}
+.sulcus-ui .workspace {
+  height: var(--film-h);
+  overflow: hidden;
+}
+.sulcus-ui .event-list {
+  max-height: var(--film-list-h, 470px);
+}
+
+/* CSS animations and transitions run on the browser's clock, which a frame
+   render does not have. Each one the product uses is re-created below from
+   film time instead (see SulcusUI.tsx and sulcusApp.js `film:` notes). */
+.sulcus-ui *,
+.sulcus-ui *::before,
+.sulcus-ui *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* @keyframes pulse { 50% { opacity: .42 } } on live status dots, 1.8 s. */
+.sulcus-ui .status-running::before,
+.sulcus-ui .cr-live.is-running .cr-dot,
+.sulcus-ui .cr-live.is-waiting_for_approval .cr-dot {
+  opacity: var(--film-pulse, 1);
+}
+
+/* @keyframes cr-pulse { 50% { box-shadow: 0 0 0 5px signal 14% } }, 2.4 s. */
+.sulcus-ui .mk-approval.is-pending {
+  box-shadow: 0 0 0 calc(var(--film-crpulse, 0) * 5px)
+    color-mix(in srgb, var(--signal) calc(var(--film-crpulse, 0) * 14%), transparent);
+}
+
+/* The approval panel's focus: opacity .42 and blur(1.2px), eased in over
+   .25 s by `transition: opacity .25s, filter .25s`. */
+.sulcus-ui .cr.is-focused .cr-head,
+.sulcus-ui .cr.is-focused .cr-cols,
+.sulcus-ui .cr.is-focused .cr-events,
+.sulcus-ui .cr.is-focused .cr-row:not(.is-focus),
+.sulcus-ui .cr.is-focused .cr-expand {
+  opacity: calc(1 - 0.58 * var(--film-focus, 1));
+  filter: blur(calc(1.2px * var(--film-focus, 1)));
+}
+.sulcus-ui .cr.is-focused .cr-gridlines span {
+  opacity: calc(1 - 0.5 * var(--film-focus, 1));
+}
+
+/* A control under the pointer. The film has no pointer; it lights the
+   control the way :hover does. */
+.sulcus-ui .cr-btn-primary.film-hover {
+  border-color: var(--signal-strong);
+  background: var(--signal-strong);
+}
+.sulcus-ui .button-primary.film-hover {
+  border-color: var(--signal-strong);
+  background: var(--signal-strong);
+  color: var(--on-signal);
+}
+.sulcus-ui .project-row.film-hover,
+.sulcus-ui .runs-table tbody tr.film-hover {
+  background: var(--surface-hover);
+}
+.sulcus-ui .runs-table tbody tr.film-hover {
+  background: #141923;
+}
