@@ -25,8 +25,9 @@ const FILTERS = ["All", "Agents", "LLM", "Tools", "Policies", "Errors", "System"
 
 // film: the app's module-level `state`, swapped in per render.
 let state = null;
-// film: fixed locale and zone (app.js uses the browser's).
-const LOCALE = "en-US";
+// film: fixed locale and zone (app.js uses the browser's). en-GB is a 24-hour
+// clock, which fits the event list's time column.
+const LOCALE = "en-GB";
 const ZONE = "UTC";
 
 function escapeHtml(value) {

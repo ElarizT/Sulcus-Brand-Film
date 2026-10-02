@@ -1,6 +1,7 @@
 import { Composition, Folder } from "remotion";
 import { Atmosphere } from "./components/Atmosphere";
 import { FontTest } from "./debug/FontTest";
+import { PlaneTest } from "./debug/PlaneTest";
 import { UITest } from "./debug/UITest";
 import {
   FILM_FRAMES,
@@ -65,6 +66,7 @@ export const RemotionRoot: React.FC = () => (
     </Folder>
     <Folder name="Debug">
       <Composition id="UITest" component={UITest} durationInFrames={FILM_FRAMES} fps={FPS} width={LOGICAL_W} height={LOGICAL_H} />
+      <Composition id="PlaneTest" component={PlaneTest} durationInFrames={3} fps={FPS} width={LOGICAL_W} height={LOGICAL_H} />
       <Composition id="FontTest" component={FontTest} durationInFrames={1} fps={FPS} width={LOGICAL_W} height={LOGICAL_H} />
     </Folder>
   </>
