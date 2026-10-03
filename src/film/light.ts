@@ -6,10 +6,10 @@ import { drawPath, drawPulse } from "../primitives/path";
 import { drawSourceLabel } from "../primitives/stream";
 import type { UIRect, Measured } from "../ui/SulcusUI";
 import { RELEASE_PAUSE } from "../ui/runs/release";
-import { landsAt, STREAM_TRAVEL } from "../ui/runs/workspace";
+import { CARDS, landsAt, STREAM_TRAVEL } from "../ui/runs/workspace";
 import { drawField } from "../world/drawField";
 import { connectTime, FIELD, fieldState, FRAMES, route, SYSTEMS } from "../world/field";
-import { controlsCard, w1, w2 } from "./planes";
+import { controlsCard, flyCard, w1, w2 } from "./planes";
 import { BEAT, CONNECT_ORDER, ECOSYSTEMS, FOLLOWED, T } from "./timeline";
 
 // Light the film adds on top of the Sulcus interface. All of it is anchored
@@ -322,9 +322,21 @@ const drawStreams = (r: Renderer, t: number, m: Measured) => {
   });
 };
 
+// The four runs of the fly-through stand between the camera and the systems:
+// the streams and names behind them are hidden by them, not drawn over them.
+const hideBehindCards = (r: Renderer, t: number) => {
+  if (t < T.flyThrough - 0.4 || t >= T.onePlace + 0.8) return;
+  CARDS.forEach((_, i) => {
+    const { plane: pl, opacity } = flyCard(i, t);
+    const q = [at(pl, 0, 0), at(pl, pl.w, 0), at(pl, pl.w, pl.h), at(pl, 0, pl.h)].map((p) => r.project(p));
+    if (q.every((p) => p)) r.cut(q as { x: number; y: number }[], opacity);
+  });
+};
+
 export const drawLight = (r: Renderer, t: number, sinks: Sinks) => {
   drawInto(r, t, sinks.w1);
   drawResearch(r, t, sinks.w1);
   drawRelease(r, t, sinks.w2);
   drawStreams(r, t, sinks.w2);
+  hideBehindCards(r, t);
 };

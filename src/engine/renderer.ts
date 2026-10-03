@@ -86,6 +86,7 @@ export class Renderer {
 
   private lines = new Map<number, number[]>();
   private dots = new Map<number, number[]>();
+  private cuts: { quad: { x: number; y: number }[]; alpha: number }[] = [];
   private lastFont = "";
 
   constructor(
@@ -120,6 +121,7 @@ export class Renderer {
     c.lineJoin = "round";
     this.lines.clear();
     this.dots.clear();
+    this.cuts = [];
     this.lastFont = "";
     this.worldScale = 1;
     this.gain = 1;
@@ -466,9 +468,33 @@ export class Renderer {
     this.dots.clear();
   }
 
+  // Something opaque stands in front of the light here (a Sulcus window in
+  // the world): whatever was drawn behind it, and its glow, is hidden.
+  cut(quad: { x: number; y: number }[], alpha = 1) {
+    if (alpha > 0.002 && quad.length > 2) this.cuts.push({ quad, alpha: Math.min(1, alpha) });
+  }
+
+  private applyCuts() {
+    if (!this.cuts.length) return;
+    const c = this.ctx;
+    c.setTransform(this.S, 0, 0, this.S, 0, 0);
+    c.globalCompositeOperation = "destination-out";
+    c.fillStyle = "#000";
+    for (const { quad, alpha } of this.cuts) {
+      c.globalAlpha = alpha;
+      c.beginPath();
+      quad.forEach((p, i) => (i ? c.lineTo(p.x, p.y) : c.moveTo(p.x, p.y)));
+      c.closePath();
+      c.fill();
+    }
+    c.globalAlpha = 1;
+    c.globalCompositeOperation = "lighter";
+  }
+
   // Bloom: the frame, blurred at two radii, added back onto itself.
   end(bloom = 1) {
     this.flush();
+    this.applyCuts();
     if (bloom <= 0) return;
     const c = this.ctx;
     const pass = (
@@ -491,5 +517,6 @@ export class Renderer {
     pass(this.bloomA, 4, 9, 0.55);
     pass(this.bloomB, 8, 44, 0.5);
     c.setTransform(this.S, 0, 0, this.S, 0, 0);
+    this.applyCuts();
   }
 }
