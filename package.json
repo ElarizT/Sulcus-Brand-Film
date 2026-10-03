@@ -1,7 +1,7 @@
 {
   "name": "sulcus-brand-film",
   "version": "1.0.0",
-  "description": "Sulcus brand film: runtime for AI agents",
+  "description": "Sulcus brand film: Control the agents.",
   "repository": {},
   "license": "UNLICENSED",
   "private": true,
